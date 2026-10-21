@@ -1,0 +1,16 @@
+name: Linux tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: System dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3-gi python3-psutil python3-cairo gir1.2-gtk-3.0 xvfb pciutils
+      - name: Core tests
+        run: PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: GUI smoke
+        run: xvfb-run -a env PYTHONPATH=src /usr/bin/python3 tests/gui_smoke.py
