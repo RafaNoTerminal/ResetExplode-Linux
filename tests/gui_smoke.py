@@ -20,6 +20,8 @@ def check():
         for control in app.window_controls.values():
             assert control.get_visible() and control.get_mapped()
             assert control.get_allocated_width() >= 24
+        for action, control in app.window_controls.items():
+            assert control.get_label(), f"Empty control: {action}"
         assert app.games is not None
         app.refresh_processes()
         assert len(app.proc_model) > 0

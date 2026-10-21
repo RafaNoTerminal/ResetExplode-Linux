@@ -3,6 +3,7 @@ import collections, datetime, json, os, pathlib, shlex, shutil, signal, subproce
 import gi
 
 gi.require_version("Gtk", "3.0")
+gi.require_foreign("cairo")
 from gi.repository import Gtk, Gdk, GLib
 from . import __version__, system, storage, integrations, report
 
@@ -154,7 +155,9 @@ class Application(Gtk.Application):
             ("maximize", "Maximizar / restaurar", self.toggle_maximized),
             ("minimize", "Minimizar", self.win.iconify),
         ]:
-            control = Gtk.Button()
+            control = Gtk.Button(
+                label={"close": "×", "maximize": "□", "minimize": "−"}[action]
+            )
             control.set_valign(Gtk.Align.CENTER)
             control.set_size_request(32, 32)
             self.window_controls[action] = control
@@ -162,15 +165,13 @@ class Application(Gtk.Application):
             control.get_style_context().add_class("window-control")
             if action == "close":
                 control.get_style_context().add_class("close-control")
-            icon = Gtk.DrawingArea()
-            icon.set_size_request(16, 16)
-            icon.connect("draw", self.draw_window_control, action)
-            control.add(icon)
             control.connect("clicked", lambda _, fn=callback: fn())
             header.pack_end(control)
         self.win.connect(
             "window-state-event",
-            lambda *_: self.window_controls["maximize"].queue_draw(),
+            lambda *_: self.window_controls["maximize"].set_label(
+                "▣" if self.win.is_maximized() else "□"
+            ),
         )
         self.win.set_titlebar(header)
         report = self.button("Exportar relatório", self.export_report)
@@ -236,31 +237,6 @@ class Application(Gtk.Application):
         else:
             self.win.maximize()
 
-    def draw_window_control(self, widget, cr, action):
-        color = widget.get_style_context().get_color(Gtk.StateFlags.NORMAL)
-        cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
-        cr.set_line_width(1.4)
-        cr.translate(
-            (widget.get_allocated_width() - 16) / 2,
-            (widget.get_allocated_height() - 16) / 2,
-        )
-        if action == "minimize":
-            cr.move_to(3, 11)
-            cr.line_to(13, 11)
-        elif action == "close":
-            cr.move_to(4, 4)
-            cr.line_to(12, 12)
-            cr.move_to(12, 4)
-            cr.line_to(4, 12)
-        elif self.win.is_maximized():
-            cr.rectangle(5, 3, 8, 8)
-            cr.stroke()
-            cr.rectangle(3, 5, 8, 8)
-        else:
-            cr.rectangle(3.5, 3.5, 9, 9)
-        cr.stroke()
-        return False
-
     def apply_theme(self):
         bg, panel, card, fg, muted, border, accent = (
             (
@@ -302,8 +278,9 @@ class Application(Gtk.Application):
         button, entry, spinbutton, combobox, textview, textview text, treeview, list, viewport {{background:{card};color:{fg};}}
         button {{background-image:none;border:1px solid {border};border-radius:7px;padding:8px 12px;}}
         button:hover {{background:{accent};}}
-        headerbar button.window-control {{padding:4px;min-width:24px;min-height:24px;margin:0 1px;border:0;box-shadow:none;background-image:none;color:{fg};}}
+        headerbar button.window-control {{font-family:sans-serif;font-size:19px;font-weight:normal;padding:4px;min-width:24px;min-height:24px;margin:0 1px;border:0;box-shadow:none;background-image:none;color:{fg};}}
         headerbar button.close-control:hover {{background:#c43d47;color:#ffffff;}}
+        headerbar button.close-control:hover label {{color:#ffffff;}}
         button:disabled {{color:{muted};}}
         entry selection, textview text selection {{background:{accent};color:{fg};}}
         treeview header button {{background:{panel};color:{fg};}}
@@ -623,7 +600,7 @@ class Application(Gtk.Application):
         )
         self.label(
             box,
-            "Teste de velocidade integrado · motor próprio do ResetExplode Linux. Mede transferência HTTPS, incluindo o custo da conexão. Infraestrutura de teste: Cloudflare. Até 106 MiB por execução; os resultados dependem da rota e do servidor.",
+            "Teste de velocidade integrado · motor próprio do ResetExplode Linux. Mede transferência HTTPS, incluindo o custo da conexão. Servidores: Cloudflare, com alternativa automática LibreSpeed se houver bloqueio. Até 212 MiB incluindo tentativas; os resultados dependem da rota e do servidor.",
             "subtitle",
         )
         self.speed_result = self.text(

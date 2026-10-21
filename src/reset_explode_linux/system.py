@@ -279,39 +279,104 @@ def disk_health(device):
     }
 
 
-def energy():
-    rows = {}
-    for supply in P("/sys/class/power_supply").glob("*"):
-        info = {}
-        for k in [
-            "type",
-            "status",
-            "capacity",
-            "cycle_count",
-            "energy_full",
-            "energy_full_design",
-            "charge_full",
-            "charge_full_design",
-            "power_now",
-            "voltage_now",
-            "online",
-        ]:
-            v = read(supply / k)
-            if v:
-                info[k] = v
-        full = info.get("energy_full", info.get("charge_full"))
-        design = info.get("energy_full_design", info.get("charge_full_design"))
-        if full and design and float(design) > 0:
-            info["desgaste_percentual"] = round(
-                max(0, 100 - 100 * float(full) / float(design)), 1
+def energy(root="/sys/class/power_supply"):
+    supplies = list(P(root).glob("*"))
+    batteries = [
+        p
+        for p in supplies
+        if read(p / "type") == "Battery" and read(p / "scope") != "Device"
+    ]
+    adapters = [
+        p
+        for p in supplies
+        if read(p / "type") != "Battery"
+        and read(p / "scope") != "Device"
+        and read(p / "online") in ("0", "1")
+    ]
+    plugged = any(read(p / "online") == "1" for p in adapters) if adapters else None
+    try:
+        fallback = psutil.sensors_battery()
+    except (AttributeError, OSError):
+        fallback = None
+    if plugged is None and fallback is not None:
+        plugged = fallback.power_plugged
+    # A battery reporting Charging/Full is stronger evidence than a missing AC node.
+    if any(read(p / "status") == "Charging" for p in batteries) or (
+        plugged is None and any(read(p / "status") == "Full" for p in batteries)
+    ):
+        plugged = True
+    rows = {
+        "Alimentação": {
+            "Carregador conectado": "Sim"
+            if plugged is True
+            else "Não"
+            if plugged is False
+            else "Não informado pelo sistema"
+        }
+    }
+    states = {
+        "Charging": "Carregando",
+        "Discharging": "Descarregando",
+        "Full": "Carga completa",
+        "Not charging": "Carga pausada pelo sistema",
+        "Unknown": "Não informado pelo firmware",
+    }
+    for battery in batteries:
+        status = read(battery / "status", "Unknown")
+        info = {
+            "Estado da bateria": states.get(status, status),
+            "Nível": read(battery / "capacity", "Não informado"),
+        }
+        if str(info["Nível"]).isdigit():
+            info["Nível"] += "%"
+        if plugged and status == "Not charging":
+            info["Observação"] = (
+                "O carregador está conectado, mas a carga está pausada. Pode ser um limite de conservação da bateria."
             )
-        rows[supply.name] = info
+        if status == "Unknown":
+            info["Observação"] = (
+                "Conexão do carregador e carregamento da bateria são informações diferentes; o firmware não informou o estado da carga."
+            )
+        for filename, label, factor, unit in [
+            ("power_now", "Potência", 1e6, "W"),
+            ("voltage_now", "Tensão", 1e6, "V"),
+            ("energy_now", "Energia atual", 1e6, "Wh"),
+            ("energy_full", "Capacidade atual", 1e6, "Wh"),
+            ("energy_full_design", "Capacidade de fábrica", 1e6, "Wh"),
+        ]:
+            try:
+                info[label] = f"{float(read(battery / filename)) / factor:.2f} {unit}"
+            except ValueError:
+                pass
+        cycles = read(battery / "cycle_count")
+        if cycles:
+            info["Ciclos de carga"] = cycles
+        for kind in ("energy", "charge"):
+            try:
+                full = float(read(battery / (kind + "_full")))
+                design = float(read(battery / (kind + "_full_design")))
+                if design > 0:
+                    info["Desgaste estimado"] = (
+                        f"{max(0, 100 - 100 * full / design):.1f}%"
+                    )
+                    break
+            except ValueError:
+                continue
+        rows[battery.name] = info
+    if not batteries:
+        if fallback is not None:
+            rows["Bateria"] = {
+                "Nível": f"{fallback.percent:.0f}%",
+                "Estado": "Alimentada pelo carregador; estado de carga não exposto"
+                if plugged
+                else "Usando bateria",
+            }
+        else:
+            rows["Bateria"] = "Nenhuma bateria do sistema detectada"
     out, _, rc = command(["powerprofilesctl", "get"], 3)
     if rc == 0:
         rows["Perfil de energia"] = out
-    return rows or {
-        "Energia": "Não há bateria ou informações de alimentação disponíveis."
-    }
+    return rows
 
 
 def network():

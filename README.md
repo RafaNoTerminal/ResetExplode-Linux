@@ -2,7 +2,7 @@
 
 Implementação comunitária para Linux, inspirada na organização e nas funcionalidades do [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode), de GustavoReset. **Não é uma distribuição oficial do projeto Windows.**
 
-Versão inicial **0.1.0**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
+Versão inicial **0.1.1**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
 
 ## O que funciona
 
@@ -24,23 +24,58 @@ Versão inicial **0.1.0**. A aplicação já é funcional; a migração integral
 
 Verificado localmente em **Debian 13, x86_64, KDE/Wayland**. Outros Linux com GTK 3/PyGObject e psutil podem executar o núcleo; ainda precisam de validação. Comandos de instalação pela interface contemplam apt, dnf e pacman, sujeitos à disponibilidade dos pacotes em cada distribuição.
 
-### Debian/Ubuntu
+### Debian/Ubuntu — baixar, instalar e abrir
+
+Abra um terminal **como seu usuário normal** e execute este bloco inteiro. Instalar as dependências não baixa o programa: o passo `git clone` é necessário na primeira instalação.
 
 ```sh
-sudo apt install python3 python3-gi python3-cairo python3-psutil gir1.2-gtk-3.0 pciutils usbutils iproute2 iputils-ping
+sudo apt update
+sudo apt install -y git
+git clone https://github.com/Rafael-Chaves-Laboratorio/ResetExplode-Linux.git "$HOME/ResetExplode-Linux"
+cd "$HOME/ResetExplode-Linux"
+./install.sh
 ./run.sh
 ```
 
-Opcional: adicionar ao menu de aplicativos, sem root:
+O `install.sh` instala dependências dos repositórios Debian/Ubuntu (com sudo), incluindo `python3-gi-cairo`, e cria o atalho **RESET EXPLODE Linux** no menu. A aplicação roda com seu usuário, sem sudo. O projeto deve ficar nessa pasta, pois os atalhos apontam para ela.
+
+Depois de instalar, abra pelo menu ou de qualquer pasta pelo terminal:
 
 ```sh
-./install-user.sh
+~/.local/bin/reset-explode-linux
 ```
 
-O atalho aponta para esta pasta; mantenha-a no lugar ou rode novamente o instalador após movê-la. Para remover o atalho:
+Se `~/.local/bin` já estiver no PATH, pode usar apenas `reset-explode-linux`. Uma nova sessão pode ser necessária para atualizar o PATH.
+
+### Atualizar uma instalação existente
+
+Feche o aplicativo e execute:
 
 ```sh
-rm ~/.local/share/applications/reset-explode-linux.desktop
+cd "$HOME/ResetExplode-Linux"
+git pull --ff-only
+./install.sh
+~/.local/bin/reset-explode-linux
+```
+
+Se clonou em outro local, use o caminho correspondente no `cd`. Se a pasta já existe, **não repita o clone**; use o bloco de atualização. Configurações e histórico ficam separados da pasta do código e são preservados.
+
+### Instalação manual das dependências
+
+Para quem prefere gerenciar os pacotes manualmente, depois de clonar e entrar na pasta:
+
+```sh
+sudo apt install python3 python3-gi python3-cairo python3-gi-cairo python3-psutil gir1.2-gtk-3.0 pciutils usbutils iproute2 iputils-ping
+./install-user.sh
+./run.sh
+```
+
+`python3-cairo` e `python3-gi-cairo` são pacotes distintos e ambos são necessários para os gráficos GTK. `./run.sh` e `./install-user.sh` devem ser executados dentro da pasta do projeto.
+
+Para remover os atalhos (sem apagar código ou configurações):
+
+```sh
+rm ~/.local/share/applications/reset-explode-linux.desktop ~/.local/bin/reset-explode-linux
 ```
 
 Ferramentas opcionais são instaladas **somente por uma ação explícita** na interface e pelo gerenciador da distribuição: `lm-sensors`, `smartmontools`, `mangohud`, `stress-ng`, `glmark2-wayland` (ou `glmark2` no X11), `gamemode`, `openrgb`. Nenhuma é baixada ao abrir a aplicação.
@@ -100,6 +135,13 @@ WPF, WMI, ETW, DXR, registro Windows e drivers `.sys` não são convertidos pelo
 - Dados de hardware, energia e histórico em campos legíveis; resultados dos testes separados dos logs técnicos.
 - Monitor de RAM por programa e por processo, com RSS e porcentagem, atualizado enquanto a página está aberta.
 - Jogos detectados automaticamente, com Steam Flatpak e atalhos XDG Game.
-- Download/upload dentro do aplicativo, motor Python próprio. O servidor padrão é a infraestrutura pública Cloudflare; não é um servidor mantido pelo projeto. Uma conexão HTTPS por vez, até 106 MiB por teste, inclui TLS/HTTP e não mede bufferbloat.
+- Download/upload dentro do aplicativo, motor Python próprio. O servidor inicial usa a infraestrutura pública Cloudflare; se falhar ou bloquear o teste, há uma tentativa alternativa em servidor do diretório público LibreSpeed. Nenhum servidor é mantido pelo projeto. Uma conexão HTTPS por vez, até 106 MiB por tentativa/212 MiB incluindo a alternativa, inclui TLS/HTTP e não mede bufferbloat.
 - Em Debian/Wayland, GPU usa glmark2-wayland; stress-ng e MangoHud são integrações opcionais da distribuição.
 - Desenvolvimento da implementação Linux realizado com Codex; referência original e licença MIT de GustavoReset preservadas.
+
+### Correções 0.1.1
+
+- Controles da janela com símbolos de texto: não dependem de callbacks Cairo para aparecer.
+- Instalador verifica a integração GTK/Cairo e fornece comando `reset-explode-linux` no diretório de binários do usuário.
+- Energia distingue carregador conectado, carga ativa, bateria cheia e carga pausada pelo firmware; dados não expostos aparecem como não informados.
+- Speedtest tenta um servidor LibreSpeed quando o endpoint inicial retorna erro (inclusive HTTP 403); falhas persistentes são explicadas sem apresentar velocidades inventadas.
