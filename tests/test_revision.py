@@ -171,3 +171,78 @@ class SpeedFallback(unittest.TestCase):
             with self.assertRaises(OSError):
                 speedtest.measure(base="http://localhost:9999")
             discover.assert_not_called()
+
+
+class UploadRegression(unittest.TestCase):
+    def local_server(self, max_body, forbidden=False):
+        from contextlib import contextmanager
+
+        requests = []
+
+        @contextmanager
+        def serve():
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    size = int(self.path.split("bytes=")[1])
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b"x" * size)
+
+                def do_POST(self):
+                    size = int(self.headers["Content-Length"])
+                    requests.append(size)
+                    self.rfile.read(size)
+                    self.send_response(
+                        403 if forbidden else (413 if size > max_body else 200)
+                    )
+                    self.end_headers()
+
+                def log_message(self, *args):
+                    pass
+
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                yield f"http://127.0.0.1:{server.server_port}", requests
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+        return serve()
+
+    def test_413_reduces_body_and_keeps_download(self):
+        events = []
+        with self.local_server(128 * 1024) as (base, bodies):
+            result = speedtest.measure(
+                base, sizes=(1,), samples=1, progress=events.append
+            )
+        self.assertGreater(result["Download (Mbps)"], 0)
+        self.assertGreater(result["Upload (Mbps)"], 0)
+        self.assertEqual(bodies[:3], [512 * 1024, 256 * 1024, 128 * 1024])
+        self.assertEqual(result["Bloco de upload (KiB)"], 128)
+        self.assertTrue(any(e["phase"] == "Reduzindo bloco de upload" for e in events))
+        self.assertEqual(events[-1]["phase"], "Concluído")
+
+    def test_upload_rejected_keeps_download_and_latency(self):
+        with self.local_server(0, forbidden=True) as (base, _):
+            result = speedtest.measure(base, sizes=(1,), samples=1)
+        self.assertGreater(result["Download (Mbps)"], 0)
+        self.assertIsNone(result["Upload (Mbps)"])
+        self.assertIn("HTTP 403", result["Aviso"])
+        self.assertIn("Latência HTTPS (ms)", result)
+
+    def test_all_sizes_rejected_has_no_fake_upload(self):
+        with self.local_server(0) as (base, bodies):
+            result = speedtest.measure(base, sizes=(1,), samples=1)
+        self.assertIsNone(result["Upload (Mbps)"])
+        self.assertEqual(bodies[-1], 8 * 1024)
+        self.assertGreater(result["Download (Mbps)"], 0)
+
+    def test_streamed_result_decoder(self):
+        from reset_explode_linux.worker import decode_result
+
+        text = '{"event":"progress","phase":"Upload"}\n{"event":"result","result":{"Download (Mbps)":10}}\n'
+        self.assertEqual(decode_result(text), {"Download (Mbps)": 10})
+        self.assertEqual(decode_result('{"teste":"CPU"}'), {"teste": "CPU"})

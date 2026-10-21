@@ -14,3 +14,6 @@ jobs:
         run: PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: GUI smoke
         run: xvfb-run -a env PYTHONPATH=src /usr/bin/python3 tests/gui_smoke.py
+
+      - name: Speed test UI protocol
+        run: xvfb-run -a env PYTHONPATH=src /usr/bin/python3 tests/gui_speed_smoke.py

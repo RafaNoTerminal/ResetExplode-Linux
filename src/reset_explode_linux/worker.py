@@ -120,6 +120,36 @@ def network_bench():
         }
 
 
+def decode_result(text):
+    """Read ordinary JSON results or the last result frame of a streamed job."""
+    try:
+        item = json.loads(text)
+        return (
+            item["result"]
+            if isinstance(item, dict) and item.get("event") == "result"
+            else item
+        )
+    except ValueError:
+        for line in reversed(text.splitlines()):
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(item, dict) and item.get("event") == "result":
+                return item["result"]
+            if isinstance(item, dict) and "erro" in item:
+                return item
+        raise ValueError("Nenhum resultado completo recebido.")
+
+
+def speed_job():
+    from .speedtest import measure
+
+    return measure(
+        progress=lambda event: print(json.dumps(event, ensure_ascii=False), flush=True)
+    )
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("task", choices=["cpu", "memory", "disk", "network", "speed"])
@@ -135,11 +165,15 @@ def main():
             "memory": memory_bench,
             "disk": lambda: disk_bench(a.directory),
             "network": network_bench,
-            "speed": lambda: __import__(
-                "reset_explode_linux.speedtest", fromlist=["measure"]
-            ).measure(),
+            "speed": speed_job,
         }[a.task]()
-        print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
+        if a.task == "speed":
+            print(
+                json.dumps({"event": "result", "result": result}, ensure_ascii=False),
+                flush=True,
+            )
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except Exception as e:
         print(json.dumps({"erro": str(e)}, ensure_ascii=False), flush=True)
         raise SystemExit(1)

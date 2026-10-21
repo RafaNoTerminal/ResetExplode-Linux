@@ -5,7 +5,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_foreign("cairo")
 from gi.repository import Gtk, Gdk, GLib
-from . import __version__, system, storage, integrations, report
+from . import __version__, system, storage, integrations, report, worker
 
 CSS = b"""
 window {background:#111317;color:#e9edf2;}
@@ -115,6 +115,69 @@ class HistoryGraph(Gtk.DrawingArea):
                 else:
                     cr.line_to(x, y)
             cr.stroke()
+        return False
+
+
+class SpeedGraph(Gtk.DrawingArea):
+    def __init__(self):
+        super().__init__()
+        self.set_size_request(400, 150)
+        self.points = collections.deque(maxlen=240)
+        self.connect("draw", self.draw)
+
+    def add_rate(self, phase, rate):
+        if rate is not None and phase in ("Download", "Upload"):
+            self.points.append((time.monotonic(), phase, max(0, float(rate))))
+            self.queue_draw()
+
+    def draw(self, widget, cr):
+        dark = Gtk.Settings.get_default().get_property(
+            "gtk-application-prefer-dark-theme"
+        )
+        width, height = self.get_allocated_width(), self.get_allocated_height()
+        cr.set_source_rgb(*((0.10, 0.12, 0.15) if dark else (0.97, 0.98, 1)))
+        cr.paint()
+        maximum = max(1, max((p[2] for p in self.points), default=1) * 1.1)
+        cr.set_source_rgba(*((1, 1, 1, 0.4) if dark else (0.1, 0.2, 0.3, 0.5)))
+        cr.set_font_size(10)
+        for step in range(4):
+            y = 15 + (height - 35) * step / 3
+            cr.move_to(48, y)
+            cr.line_to(width - 8, y)
+            cr.stroke()
+            cr.move_to(3, y + 4)
+            cr.show_text(
+                format(maximum * (3 - step) / 3, ".1f" if maximum < 10 else ".0f")
+            )
+        if not self.points:
+            return False
+        start = self.points[0][0]
+        duration = max(1, self.points[-1][0] - start)
+        for phase, color in (
+            ("Download", (1, 0.48, 0.12)),
+            ("Upload", (0.2, 0.55, 0.95)),
+        ):
+            cr.set_source_rgb(*color)
+            cr.set_line_width(2)
+            active = False
+            for timestamp, direction, value in self.points:
+                if direction != phase:
+                    active = False
+                    continue
+                x = 48 + (width - 60) * (timestamp - start) / duration
+                y = height - 20 - (height - 35) * value / maximum
+                if active:
+                    cr.line_to(x, y)
+                else:
+                    cr.move_to(x, y)
+                active = True
+            cr.stroke()
+            for timestamp, direction, value in self.points:
+                if direction == phase:
+                    x = 48 + (width - 60) * (timestamp - start) / duration
+                    y = height - 20 - (height - 35) * value / maximum
+                    cr.arc(x, y, 2, 0, 6.283185)
+                    cr.fill()
         return False
 
 
@@ -282,6 +345,8 @@ class Application(Gtk.Application):
         headerbar button.close-control:hover {{background:#c43d47;color:#ffffff;}}
         headerbar button.close-control:hover label {{color:#ffffff;}}
         button:disabled {{color:{muted};}}
+        button.speed-start {{background:#f6821f;color:#17202c;}}
+        button.speed-start label {{color:#17202c;}}
         entry selection, textview text selection {{background:{accent};color:{fg};}}
         treeview header button {{background:{panel};color:{fg};}}
         progressbar trough {{min-height:8px;background:{border};border-radius:5px;}}
@@ -579,7 +644,70 @@ class Application(Gtk.Application):
         )
 
     def network_page(self, box):
-        self.put(self.text(box), system.network())
+        self.label(
+            box,
+            "Meça download, upload e estabilidade da conexão. Acompanhe as etapas e a transferência em tempo real.",
+            "subtitle",
+        )
+        self.label(box, "Sua conexão", "heading")
+        self.speed_metrics = {}
+        for pair in (
+            ("Download (Mbps)", "Upload (Mbps)"),
+            ("Latência HTTPS (ms)", "Variação da latência (ms)"),
+        ):
+            row = Gtk.Box(spacing=12)
+            box.pack_start(row, False, False, 0)
+            for key in pair:
+                display = {
+                    "Download (Mbps)": "DOWNLOAD · Mbps",
+                    "Upload (Mbps)": "UPLOAD · Mbps",
+                    "Latência HTTPS (ms)": "LATÊNCIA · ms",
+                    "Variação da latência (ms)": "JITTER · ms",
+                }.get(key, key.upper())
+                label, bar = self.metric(row, display)
+                bar.set_no_show_all(True)
+                bar.hide()
+                self.speed_metrics[key] = label
+        self.speed_status = self.label(box, "Pronto para medir")
+        self.speed_progress = Gtk.ProgressBar()
+        box.pack_start(self.speed_progress, False, False, 0)
+        self.speed_graph = SpeedGraph()
+        box.pack_start(self.speed_graph, False, False, 0)
+        self.label(
+            box,
+            "Download laranja · Upload azul · Mb/s durante o teste. Jitter representa a variação das requisições HTTPS.",
+            "subtitle",
+        )
+        speed_actions = self.buttons(
+            box,
+            [
+                (
+                    "Iniciar / testar novamente",
+                    lambda: self.run_worker("speed", "Velocidade da internet"),
+                ),
+                ("Parar", self.stop_job),
+            ],
+        )
+        speed_actions.get_child_at_index(0).get_child().get_style_context().add_class(
+            "speed-start"
+        )
+        details = Gtk.Expander(label="Servidor, método e detalhes do resultado")
+        contents = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        details.add(contents)
+        box.pack_start(details, False, False, 0)
+        self.speed_result = self.text(
+            contents,
+            {
+                "Servidores": "Cloudflare, com alternativa automática LibreSpeed",
+                "Tráfego máximo": "214 MiB incluindo tentativas e blocos recusados",
+                "Método": "Uma conexão HTTPS por vez; inclui o custo de conexão e resposta. Não mede bufferbloat. O servidor usado aparece no resultado.",
+            },
+        )
+        interfaces = Gtk.Expander(label="Interfaces de rede")
+        interface_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        interfaces.add(interface_box)
+        self.put(self.text(interface_box), system.network())
+        box.pack_start(interfaces, False, False, 0)
         self.label(
             box,
             "O diagnóstico envia 5 pings ao gateway e a 1.1.1.1/8.8.8.8. Sem envio de inventário, arquivos ou credenciais.",
@@ -598,24 +726,30 @@ class Application(Gtk.Application):
                 )
             ],
         )
-        self.label(
-            box,
-            "Teste de velocidade integrado · motor próprio do ResetExplode Linux. Mede transferência HTTPS, incluindo o custo da conexão. Servidores: Cloudflare, com alternativa automática LibreSpeed se houver bloqueio. Até 212 MiB incluindo tentativas; os resultados dependem da rota e do servidor.",
-            "subtitle",
+
+    def speed_event(self, event):
+        phase = event.get("phase", "Medindo")
+        self.speed_status.set_text(phase)
+        self.speed_progress.set_fraction(
+            {
+                "Conectando": 0.02,
+                "Trocando servidor": 0.03,
+                "Latência": 0.08,
+                "Download": 0.25,
+                "Upload": 0.7,
+                "Reduzindo bloco de upload": 0.7,
+                "Concluído": 1,
+            }.get(phase, 0)
         )
-        self.speed_result = self.text(
-            box, "Download, upload e latência aparecerão aqui."
-        )
-        self.buttons(
-            box,
-            [
-                (
-                    "Iniciar teste de velocidade",
-                    lambda: self.run_worker("speed", "Velocidade da internet"),
-                ),
-                ("Parar teste", self.stop_job),
-            ],
-        )
+        for key, value in event.get("metrics", {}).items():
+            if key in self.speed_metrics:
+                self.speed_metrics[key].set_text(
+                    f"{value:.2f}"
+                    if isinstance(value, (int, float))
+                    else "Indisponível"
+                )
+        self.speed_graph.add_rate(phase, event.get("rate"))
+        return False
 
     def game_page(self, box):
         self.games = storage.load("games.json", [])
@@ -1254,7 +1388,9 @@ class Application(Gtk.Application):
         rows = []
         for item in reversed(storage.histories()):
             try:
-                result = json.loads(item.get("output", ""))
+                result = item.get("result") or worker.decode_result(
+                    item.get("output", "")
+                )
             except ValueError:
                 result = item.get("output", "").strip()
             rows.append(
@@ -1422,6 +1558,11 @@ class Application(Gtk.Application):
         )
         self.put(self.result_details, {"Tarefa": title, "Estado": "Em execução"})
         if title == "Velocidade da internet":
+            self.speed_graph.points.clear()
+            self.speed_graph.queue_draw()
+            for label in self.speed_metrics.values():
+                label.set_text("—")
+            self.speed_event({"phase": "Conectando"})
             self.put(self.speed_result, "Medindo latência, download e upload…")
         self.stress_status.set_text("Executando " + title)
         self._job_start = time.monotonic()
@@ -1447,6 +1588,13 @@ class Application(Gtk.Application):
             length = 0
             try:
                 for line in proc.stdout:
+                    if title == "Velocidade da internet":
+                        try:
+                            event = json.loads(line)
+                            if event.get("event") == "progress":
+                                GLib.idle_add(self.speed_event, event)
+                        except (ValueError, AttributeError):
+                            pass
                     chunks.append(line)
                     length += len(line)
                     while length > 200000 and len(chunks) > 1:
@@ -1515,9 +1663,8 @@ class Application(Gtk.Application):
             "seconds": round(time.monotonic() - self._job_start, 2),
             "output": text[-30000:],
         }
-        storage.history(record)
         try:
-            result = json.loads(text)
+            result = worker.decode_result(text)
         except ValueError:
             result = {
                 "Tarefa": title,
@@ -1529,12 +1676,28 @@ class Application(Gtk.Application):
                 if text.strip()
                 else "Tarefa concluída sem saída adicional.",
             }
+        record["result"] = result
+        storage.history(record)
         score = re.search(r"glmark2 Score:\s*(\d+)", text)
         if score:
             result["Pontuação glmark2"] = int(score[1])
         self.put(self.result_details, result)
         if title == "Velocidade da internet":
             self.put(self.speed_result, result)
+            self.speed_event(
+                {
+                    "phase": "Interrompido"
+                    if cancelled
+                    else ("Falhou" if code else "Concluído"),
+                    "metrics": result,
+                }
+            )
+            if result.get("Aviso"):
+                self.speed_status.set_text("Resultado parcial · " + result["Aviso"])
+            elif result.get("erro"):
+                self.speed_status.set_text(
+                    "Não foi possível concluir · " + result["erro"]
+                )
         self.put(
             self.job_output,
             text

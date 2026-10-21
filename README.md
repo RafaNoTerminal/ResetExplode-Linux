@@ -2,7 +2,7 @@
 
 Implementação comunitária para Linux, inspirada na organização e nas funcionalidades do [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode), de GustavoReset. **Não é uma distribuição oficial do projeto Windows.**
 
-Versão inicial **0.1.1**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
+Versão inicial **0.1.2**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
 
 ## O que funciona
 
@@ -135,7 +135,7 @@ WPF, WMI, ETW, DXR, registro Windows e drivers `.sys` não são convertidos pelo
 - Dados de hardware, energia e histórico em campos legíveis; resultados dos testes separados dos logs técnicos.
 - Monitor de RAM por programa e por processo, com RSS e porcentagem, atualizado enquanto a página está aberta.
 - Jogos detectados automaticamente, com Steam Flatpak e atalhos XDG Game.
-- Download/upload dentro do aplicativo, motor Python próprio. O servidor inicial usa a infraestrutura pública Cloudflare; se falhar ou bloquear o teste, há uma tentativa alternativa em servidor do diretório público LibreSpeed. Nenhum servidor é mantido pelo projeto. Uma conexão HTTPS por vez, até 106 MiB por tentativa/212 MiB incluindo a alternativa, inclui TLS/HTTP e não mede bufferbloat.
+- Download/upload dentro do aplicativo, motor Python próprio. O servidor inicial usa a infraestrutura pública Cloudflare; se falhar ou bloquear o teste, há uma tentativa alternativa em servidor do diretório público LibreSpeed. Nenhum servidor é mantido pelo projeto. Uma conexão HTTPS por vez, até 107 MiB por tentativa/214 MiB incluindo a alternativa e blocos recusados, inclui TLS/HTTP e não mede bufferbloat.
 - Em Debian/Wayland, GPU usa glmark2-wayland; stress-ng e MangoHud são integrações opcionais da distribuição.
 - Desenvolvimento da implementação Linux realizado com Codex; referência original e licença MIT de GustavoReset preservadas.
 
@@ -145,3 +145,9 @@ WPF, WMI, ETW, DXR, registro Windows e drivers `.sys` não são convertidos pelo
 - Instalador verifica a integração GTK/Cairo e fornece comando `reset-explode-linux` no diretório de binários do usuário.
 - Energia distingue carregador conectado, carga ativa, bateria cheia e carga pausada pelo firmware; dados não expostos aparecem como não informados.
 - Speedtest tenta um servidor LibreSpeed quando o endpoint inicial retorna erro (inclusive HTTP 403); falhas persistentes são explicadas sem apresentar velocidades inventadas.
+
+### Speedtest 0.1.2
+
+A página Rede apresenta download, upload, latência e jitter em cartões, com gráfico de tráfego e etapas ao vivo, inspirada na organização do teste Cloudflare. Não é o teste oficial da Cloudflare nem usa suas notas de qualidade. A variação exibida é de requisições HTTPS; não há medição de bufferbloat.
+
+O upload usa POSTs de até 512 KiB, reduzidos automaticamente até 8 KiB quando o servidor retorna HTTP 413. O teste considera somente os blocos aceitos para calcular a velocidade, incluindo o custo HTTPS de cada requisição, e limita essa fase a seis segundos entre requisições (cada requisição tem timeout de15s). Se o upload não puder ser medido, download/latência continuam visíveis e upload aparece como indisponível. Falhas após alguns blocos exibem o valor medido como parcial, com aviso. Um teste normal transfere no máximo106MiB; com erros e alternativa, até214MiB, mais o pequeno tráfego de controle.
