@@ -32,7 +32,7 @@ Abra um terminal **como seu usuário normal** e execute este bloco inteiro. Inst
 ```sh
 sudo apt update
 sudo apt install -y git
-git clone https://github.com/Rafael-Chaves-Laboratorio/ResetExplode-Linux.git "$HOME/ResetExplode-Linux"
+git clone https://github.com/RafaNoTerminal/ResetExplode-Linux.git "$HOME/ResetExplode-Linux"
 cd "$HOME/ResetExplode-Linux"
 ./install.sh
 ./run.sh
