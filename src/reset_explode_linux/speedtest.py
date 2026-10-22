@@ -73,8 +73,8 @@ def _measure(
     output = {
         "Teste": "Velocidade · ResetExplode Linux",
         "Servidor": base,
-        "Latência HTTPS (ms)": round(statistics.median(latencies), 2),
-        "Variação da latência (ms)": round(statistics.pstdev(latencies), 2),
+        "Latência (ms)": round(statistics.median(latencies), 2),
+        "Jitter (ms)": round(statistics.pstdev(latencies), 2),
     }
     transferred = 0
     notify("Download")

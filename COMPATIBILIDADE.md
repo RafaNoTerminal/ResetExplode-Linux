@@ -60,3 +60,9 @@ Verificação prática curta adicional: glmark2-wayland executou uma cena off-sc
 - Resultados parciais explícitos; tráfego limitado a214MiB incluindo alternativa e corpos rejeitados. O valor conta aplicação/HTTPS por requisição, podendo ficar abaixo da capacidade do link.
 - Rede com cartões download/upload/latência/jitter, gráfico de tráfego e eventos de progresso de subprocesso. Interface inspirada na organização Cloudflare, sem logo oficial/nota de qualidade ou medições não implementadas. Interfaces de rede e detalhes técnicos recolhidos; histórico guarda resultado estruturado.
 - Regressões reproduzem413 com servidorHTTP local, redução de corpos, rejeição completa e preservação de dados. Teste GUI separado verifica eventos, gráfico e resultado final com subprocesso de fixture, sem internet e com estado temporário.
+
+## Versão 0.1.3 — motor adequado para comparação de velocidade
+
+O diagnóstico HTTPS anterior não media a capacidade da conexão: transferências pequenas/sequenciais e servidores distantes subestimavam taxas, mesmo estando numericamente calculadas a partir de tráfego real. O usuário comparou em22/10 o servidor Atlanta (~430ms) com servidor local Ookla (~0.64ms), evidenciando a inadequação da comparação. Não afirmar que a conexão estava limitada aos resultados do diagnóstico anterior.
+
+Integração opcional com CLI oficial Ookla já instalado, mantendo painel/gráfico próprios. Seleção por motor explícita; defaultOokla quando encontrado. Não redistribui binário nem aceita licença automaticamente. Não confunde speedtest-cliPython com cliente oficial. Converte bytes/s emMbps, preserva perdas/latênciassobcarga quando fornecidas, omiteIPs/ISP/IDsprivados na normalização. Comandos permanecem semshell e o CLI é filho do worker no mesmo grupo para cancelamento. O diagnósticoHTTPS permanece identificado e separado; seu limite214MiBnãoseaplicaaoOokla.

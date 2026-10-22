@@ -231,7 +231,7 @@ class UploadRegression(unittest.TestCase):
         self.assertGreater(result["Download (Mbps)"], 0)
         self.assertIsNone(result["Upload (Mbps)"])
         self.assertIn("HTTP 403", result["Aviso"])
-        self.assertIn("Latência HTTPS (ms)", result)
+        self.assertIn("Latência (ms)", result)
 
     def test_all_sizes_rejected_has_no_fake_upload(self):
         with self.local_server(0) as (base, bodies):

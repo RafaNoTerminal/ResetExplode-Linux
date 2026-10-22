@@ -5,7 +5,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_foreign("cairo")
 from gi.repository import Gtk, Gdk, GLib
-from . import __version__, system, storage, integrations, report, worker
+from . import __version__, system, storage, integrations, report, worker, ookla
 
 CSS = b"""
 window {background:#111317;color:#e9edf2;}
@@ -650,10 +650,27 @@ class Application(Gtk.Application):
             "subtitle",
         )
         self.label(box, "Sua conexão", "heading")
+        self.speed_engine = Gtk.ComboBoxText()
+        self.speed_engine.append("ookla", "Speedtest oficial · Ookla")
+        self.speed_engine.append("https", "Diagnóstico HTTPS · servidor público")
+        self.speed_engine.set_active_id("ookla" if ookla.find_cli() else "https")
+        box.pack_start(self.speed_engine, False, False, 0)
+        self.speed_engine_info = self.label(box, "", "subtitle")
+        self.speed_engine.connect("changed", lambda *_: self.update_speed_engine())
+        self.update_speed_engine()
+        self.buttons(
+            box,
+            [
+                (
+                    "Instalação do Speedtest oficial",
+                    lambda: self.open_url("https://www.speedtest.net/apps/cli"),
+                )
+            ],
+        )
         self.speed_metrics = {}
         for pair in (
             ("Download (Mbps)", "Upload (Mbps)"),
-            ("Latência HTTPS (ms)", "Variação da latência (ms)"),
+            ("Latência (ms)", "Jitter (ms)"),
         ):
             row = Gtk.Box(spacing=12)
             box.pack_start(row, False, False, 0)
@@ -661,13 +678,18 @@ class Application(Gtk.Application):
                 display = {
                     "Download (Mbps)": "DOWNLOAD · Mbps",
                     "Upload (Mbps)": "UPLOAD · Mbps",
-                    "Latência HTTPS (ms)": "LATÊNCIA · ms",
-                    "Variação da latência (ms)": "JITTER · ms",
+                    "Latência (ms)": "LATÊNCIA · ms",
+                    "Jitter (ms)": "JITTER · ms",
                 }.get(key, key.upper())
                 label, bar = self.metric(row, display)
                 bar.set_no_show_all(True)
                 bar.hide()
                 self.speed_metrics[key] = label
+        self.speed_extra = self.label(
+            box,
+            "Perda de pacotes e latência sob carga aparecem quando o motor informar.",
+            "subtitle",
+        )
         self.speed_status = self.label(box, "Pronto para medir")
         self.speed_progress = Gtk.ProgressBar()
         box.pack_start(self.speed_progress, False, False, 0)
@@ -675,7 +697,7 @@ class Application(Gtk.Application):
         box.pack_start(self.speed_graph, False, False, 0)
         self.label(
             box,
-            "Download laranja · Upload azul · Mb/s durante o teste. Jitter representa a variação das requisições HTTPS.",
+            "Download laranja · Upload azul · Mb/s durante o teste. Método e servidor são identificados no resultado.",
             "subtitle",
         )
         speed_actions = self.buttons(
@@ -683,7 +705,11 @@ class Application(Gtk.Application):
             [
                 (
                     "Iniciar / testar novamente",
-                    lambda: self.run_worker("speed", "Velocidade da internet"),
+                    lambda: self.run_worker(
+                        "speed",
+                        "Velocidade da internet",
+                        extra=["--engine", self.speed_engine.get_active_id()],
+                    ),
                 ),
                 ("Parar", self.stop_job),
             ],
@@ -698,9 +724,9 @@ class Application(Gtk.Application):
         self.speed_result = self.text(
             contents,
             {
-                "Servidores": "Cloudflare, com alternativa automática LibreSpeed",
-                "Tráfego máximo": "214 MiB incluindo tentativas e blocos recusados",
-                "Método": "Uma conexão HTTPS por vez; inclui o custo de conexão e resposta. Não mede bufferbloat. O servidor usado aparece no resultado.",
+                "Servidores": "Selecionados pelo motor escolhido",
+                "Tráfego": "Ookla: pode transferir vários GB. HTTPS: até214MiB, incluindo tentativas.",
+                "Método": "Ookla usa o cliente oficial instalado; Diagnóstico HTTPS usa requisições pequenas e pode subestimar a capacidade. O servidor aparece no resultado.",
             },
         )
         interfaces = Gtk.Expander(label="Interfaces de rede")
@@ -727,6 +753,16 @@ class Application(Gtk.Application):
             ],
         )
 
+    def update_speed_engine(self):
+        if self.speed_engine.get_active_id() == "ookla":
+            self.speed_engine_info.set_text(
+                "Usa o mesmo cliente oficial do terminal, com seleção de servidor. Pode transferir vários GB e ocupar a conexão durante o teste. Termos do fabricante são revisados no terminal, sem aceite automático."
+            )
+        else:
+            self.speed_engine_info.set_text(
+                "Diagnóstico de transferências HTTPS pequenas, até214MiB. Servidores distantes e o custo por requisição podem limitar o resultado; não mede a capacidade do plano de internet."
+            )
+
     def speed_event(self, event):
         phase = event.get("phase", "Medindo")
         self.speed_status.set_text(phase)
@@ -748,6 +784,17 @@ class Application(Gtk.Application):
                     if isinstance(value, (int, float))
                     else "Indisponível"
                 )
+        metrics = event.get("metrics", {})
+        extras = []
+        for key in (
+            "Perda de pacotes (%)",
+            "Latência durante download (ms)",
+            "Latência durante upload (ms)",
+        ):
+            if key in metrics:
+                extras.append(key + ": " + str(metrics[key]))
+        if extras:
+            self.speed_extra.set_text(" · ".join(extras))
         self.speed_graph.add_rate(phase, event.get("rate"))
         return False
 
@@ -1537,6 +1584,7 @@ class Application(Gtk.Application):
             [sys.executable, "-m", "reset_explode_linux.worker", task, *(extra or [])],
             title,
             confirm=confirm,
+            seconds=180 if task == "speed" else 0,
         )
 
     def run_job(self, argv, title, confirm=None, seconds=0, thermal=False):
@@ -1558,6 +1606,10 @@ class Application(Gtk.Application):
         )
         self.put(self.result_details, {"Tarefa": title, "Estado": "Em execução"})
         if title == "Velocidade da internet":
+            self.speed_engine.set_sensitive(False)
+            self.speed_extra.set_text(
+                "Perda de pacotes e latência sob carga: aguardando medição."
+            )
             self.speed_graph.points.clear()
             self.speed_graph.queue_draw()
             for label in self.speed_metrics.values():
@@ -1579,6 +1631,8 @@ class Application(Gtk.Application):
             )
         except OSError as e:
             self.process = None
+            if title == "Velocidade da internet":
+                self.speed_engine.set_sensitive(True)
             return self.message(str(e))
         proc = self.process
         self.last_job = title
@@ -1683,6 +1737,7 @@ class Application(Gtk.Application):
             result["Pontuação glmark2"] = int(score[1])
         self.put(self.result_details, result)
         if title == "Velocidade da internet":
+            self.speed_engine.set_sensitive(True)
             self.put(self.speed_result, result)
             self.speed_event(
                 {

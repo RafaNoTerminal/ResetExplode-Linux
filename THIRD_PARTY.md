@@ -9,3 +9,5 @@
 O projeto não inclui jogos, ISOs, drivers proprietários, chaves, firmware, binários do Windows ou programas de terceiros.
 
 - Speedtest: motor Python próprio usando protocolos públicos [Cloudflare speedtest](https://github.com/cloudflare/speedtest) e [LibreSpeed](https://github.com/librespeed/speedtest), com diretório de servidores em https://librespeed.org/backend-servers/servers.php . Nenhum código desses clientes é incluído; a infraestrutura de teste pertence aos respectivos provedores, identificados na interface.
+
+- Integração opcional com Speedtest CLI oficial da Ookla, instalado independentemente pelo usuário. Binário proprietário não incluído nem relicenciado sob MIT. Termos e instalação: https://www.speedtest.net/apps/cli . Não há flags de aceite de licença/privacidade automático.

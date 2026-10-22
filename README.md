@@ -2,7 +2,7 @@
 
 Implementação comunitária para Linux, inspirada na organização e nas funcionalidades do [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode), de GustavoReset. **Não é uma distribuição oficial do projeto Windows.**
 
-Versão inicial **0.1.2**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
+Versão inicial **0.1.3**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
 
 ## O que funciona
 
@@ -151,3 +151,14 @@ WPF, WMI, ETW, DXR, registro Windows e drivers `.sys` não são convertidos pelo
 A página Rede apresenta download, upload, latência e jitter em cartões, com gráfico de tráfego e etapas ao vivo, inspirada na organização do teste Cloudflare. Não é o teste oficial da Cloudflare nem usa suas notas de qualidade. A variação exibida é de requisições HTTPS; não há medição de bufferbloat.
 
 O upload usa POSTs de até 512 KiB, reduzidos automaticamente até 8 KiB quando o servidor retorna HTTP 413. O teste considera somente os blocos aceitos para calcular a velocidade, incluindo o custo HTTPS de cada requisição, e limita essa fase a seis segundos entre requisições (cada requisição tem timeout de15s). Se o upload não puder ser medido, download/latência continuam visíveis e upload aparece como indisponível. Falhas após alguns blocos exibem o valor medido como parcial, com aviso. Um teste normal transfere no máximo106MiB; com erros e alternativa, até214MiB, mais o pequeno tráfego de controle.
+
+### Speedtest 0.1.3 — comparação com o terminal
+
+O painel oferece dois motores identificados no seletor:
+
+- **Speedtest oficial · Ookla**: usa o mesmo executável oficial do terminal, detectado automaticamente se instalado. O cliente seleciona o servidor; download/upload, latência/jitter, perda e latências sob carga informadas pelo CLI aparecem no painel. Não há troca silenciosa para HTTPS se esse motor falhar. O teste pode transferir vários GB; o limite de214MiB do diagnóstico HTTPS não se aplica a ele.
+- **Diagnóstico HTTPS**: teste próprio com requisições pequenas/sequenciais. Servidores distantes, TLS e overhead por requisição podem limitar muito a taxa observada. **Esse resultado não deve ser apresentado como capacidade do link nem comparado diretamente com o Ookla.** Mantido para diagnosticar transferências HTTP.
+
+Se a imagem do sistema não inclui o executável oficial `speedtest`, siga a [instalação oficial da Ookla](https://www.speedtest.net/apps/cli). O pacote Python `speedtest-cli` é outro programa; não é usado como substituto automático. O aplicativo não redistribui o binário proprietário, não adiciona repositórios de terceiros nem aceita termos do fabricante por você. Se for necessário no primeiro uso, execute `speedtest` no terminal para revisar os termos e só depois inicie pelo painel. Termos/privacidade aplicáveis são do fabricante.
+
+Os formatos JSON do CLI usam bytes por segundo; a interface converte para Mbps com `bandwidth × 8 / 1.000.000`. O adaptador guarda apenas métricas e identificação do servidor, omitindo IPs do cliente, ISP e IDs/URLs de compartilhamento do resultado. Abrir o aplicativo nunca executa medição automaticamente; o botão Parar encerra o grupo do teste, incluindo o CLI filho. A interface limita a tarefa a180segundos.

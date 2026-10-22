@@ -15,8 +15,8 @@ errors = []
 fixture = {
     "Download (Mbps)": 42.5,
     "Upload (Mbps)": 12.25,
-    "Latência HTTPS (ms)": 21.0,
-    "Variação da latência (ms)": 2.0,
+    "Latência (ms)": 21.0,
+    "Jitter (ms)": 2.0,
 }
 
 
