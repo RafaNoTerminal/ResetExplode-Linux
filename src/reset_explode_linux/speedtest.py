@@ -1,234 +1,351 @@
-"""Bounded HTTPS throughput measurement; no third-party client or webpage."""
+"""Native network measurement: persistent sessions, parallel transfers, no CLI.
+
+Only measurement traffic is sent; no result submission or client inventory.
+Public HTTP test servers are independent of this client and may impose limits.
+"""
 
 from __future__ import annotations
+import concurrent.futures
+import dataclasses
 import json
 import os
-import urllib.error
 import statistics
+import threading
 import time
-import urllib.request
+import urllib.parse
+import uuid
+import requests
 
-DEFAULT_SERVER = "https://speed.cloudflare.com"
+DIRECTORY = (
+    "https://www.speedtest.net/api/js/servers?engine=js&limit=12&https_functional=true"
+)
+MIB = 1024**2
 
 
-def _measure(
-    base=DEFAULT_SERVER, sizes=(1, 4, 16, 32), samples=5, paths=None, progress=None
-):
-    """Single-stream application throughput, not an ISP capacity certification.
+@dataclasses.dataclass(frozen=True)
+class Server:
+    name: str
+    download: str
+    upload: str
+    latency: str
+    size: int
+    identifier: str = ""
 
-    A compatible user-hosted endpoint may be passed as base. Download and upload
-    stop ramping after a request lasts two seconds, with a fixed byte ceiling.
-    """
 
-    ping_path, down_path, up_path = paths or (
-        "/__down?bytes=0",
-        "/__down?bytes={bytes}",
-        "/__up",
+def session():
+    client = requests.Session()
+    client.headers.update(
+        {
+            "User-Agent": "ResetExplode-Linux/0.1.4",
+            "Accept-Encoding": "identity",
+            "Cache-Control": "no-cache",
+        }
     )
+    return client
 
-    output = {}
 
-    def notify(phase, rate=None):
+def latency(client, url):
+    start = time.perf_counter()
+    with client.get(url, timeout=(3, 3), stream=True) as response:
+        response.raise_for_status()
+        payload = response.raw.read(1024)
+        if b"test=test" not in payload:
+            raise ValueError("O servidor não respondeu ao diagnóstico de latência.")
+    return (time.perf_counter() - start) * 1000
+
+
+def discover():
+    with session() as client:
+        with client.get(DIRECTORY, timeout=(4, 5), stream=True) as response:
+            response.raise_for_status()
+            payload = response.raw.read(256 * 1024 + 1)
+    if len(payload) > 256 * 1024:
+        raise ValueError("Diretório de servidores excedeu o limite.")
+    items = json.loads(payload)
+    if not isinstance(items, list):
+        raise ValueError("Diretório de servidores inválido.")
+
+    def probe(item):
+        if not isinstance(item, dict):
+            return None
+        parts = urllib.parse.urlsplit(str(item.get("url", "")))
+        if (
+            parts.scheme not in ("http", "https")
+            or not parts.hostname
+            or parts.username
+            or parts.password
+        ):
+            return None
+        initial = urllib.parse.urljoin(parts.geturl(), "random4000x4000.jpg")
+        try:
+            with session() as client:
+                # Some providers advertise an old HTTP name and redirect to their
+                # certificate-valid TLS host. Follow normal redirects, never disable TLS verification.
+                with client.head(
+                    initial, timeout=(3, 3), allow_redirects=True
+                ) as response:
+                    response.raise_for_status()
+                    if urllib.parse.urlsplit(response.url).scheme != "https":
+                        return None
+                    size = int(response.headers.get("Content-Length", 0))
+                    if not 64 * 1024 <= size <= 64 * MIB:
+                        return None
+                    base = response.url.rsplit("/", 1)[0] + "/"
+                    download = response.url
+                target = Server(
+                    " · ".join(
+                        str(item[k])
+                        for k in ("sponsor", "name", "country")
+                        if item.get(k)
+                    ),
+                    download,
+                    base + "upload.php",
+                    base + "latency.txt",
+                    size,
+                    str(item.get("id", "")),
+                )
+                latency(client, target.latency)  # warm connection
+                samples = [latency(client, target.latency) for _ in range(2)]
+                return statistics.median(samples), target
+        except (requests.RequestException, ValueError):
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        reachable = [
+            result for result in pool.map(probe, items[:12]) if result is not None
+        ]
+    if not reachable:
+        raise ValueError(
+            "Não foi possível acessar um servidor próximo com TLS válido. Tente novamente ou verifique a conexão/proxy."
+        )
+    return min(reachable, key=lambda item: item[0])[1]
+
+
+class Budget:
+    def __init__(self, maximum):
+        self.remaining = maximum
+        self.lock = threading.Lock()
+
+    def reserve(self, amount):
+        with self.lock:
+            if amount > self.remaining:
+                return False
+            self.remaining -= amount
+            return True
+
+
+class Meter:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.total = 0
+        self.finished_at = 0.0
+        self.errors = []
+
+    def add(self, amount):
+        with self.lock:
+            self.total += amount
+
+    def error(self, message):
+        with self.lock:
+            if message not in self.errors:
+                self.errors.append(message)
+
+
+def transfer(server, clients, upload, seconds, maximum, progress=None):
+    """Aggregate bytes divided by one shared wall clock, never sum per-stream rates."""
+    meter = Meter()
+    budget = Budget(maximum)
+    start_event = threading.Event()
+    start = [0.0]
+    phase = "Upload" if upload else "Download"
+
+    def run(client):
+        body_size = min(64 * 1024, maximum)
+        body_ceiling = min(2 * MIB, maximum)
+        # Random reusable body avoids a fresh entropy allocation for every request.
+        payload = b"content1=" + os.urandom(body_size - 9) if upload else None
+        start_event.wait()
+        deadline = start[0] + seconds
+        while time.perf_counter() < deadline:
+            size = body_size if upload else server.size
+            if not budget.reserve(size):
+                break
+            try:
+                if upload:
+                    request_start = time.perf_counter()
+                    with client.post(
+                        server.upload,
+                        data=payload,
+                        headers={"Content-Type": "application/octet-stream"},
+                        timeout=(3, 3),
+                        stream=True,
+                    ) as response:
+                        if response.status_code == 413 and body_size > 8 * 1024:
+                            body_size //= 2
+                            body_ceiling = min(body_ceiling, body_size)
+                            payload = b"content1=" + payload[9:body_size]
+                            continue
+                        response.raise_for_status()
+                        answer = response.raw.read(1024).strip()
+                        if answer != f"size={size}".encode():
+                            raise ValueError(
+                                "O servidor não confirmou o tamanho do upload."
+                            )
+                    meter.add(size)
+                    if (
+                        time.perf_counter() - request_start < 0.15
+                        and body_size < body_ceiling
+                    ):
+                        body_size = min(body_size * 2, body_ceiling)
+                        payload = b"content1=" + os.urandom(body_size - 9)
+                else:
+                    received = 0
+                    params = {"reset_nonce": uuid.uuid4().hex}
+                    with client.get(
+                        server.download, params=params, timeout=(3, 3), stream=True
+                    ) as response:
+                        response.raise_for_status()
+                        if response.headers.get("Content-Encoding", "identity") not in (
+                            "",
+                            "identity",
+                        ):
+                            raise ValueError("O servidor comprimiu os dados do teste.")
+                        for chunk in response.iter_content(256 * 1024):
+                            received += len(chunk)
+                            if received > server.size:
+                                raise ValueError(
+                                    "Resposta de download maior que a anunciada."
+                                )
+                            meter.add(len(chunk))
+                            if time.perf_counter() >= deadline:
+                                return
+                    if received != server.size:
+                        raise ValueError("Download incompleto.")
+            except (requests.RequestException, ValueError) as exc:
+                meter.error(f"{phase}: {type(exc).__name__}")
+                break
+
+    def task(client):
+        try:
+            return run(client)
+        finally:
+            with meter.lock:
+                meter.finished_at = max(meter.finished_at, time.perf_counter())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(clients)) as pool:
+        futures = [pool.submit(task, client) for client in clients]
+        start[0] = time.perf_counter()
+        start_event.set()
+        previous = start[0]
+        previous_bytes = 0
+        while not all(f.done() for f in futures):
+            time.sleep(0.2)
+            now = time.perf_counter()
+            with meter.lock:
+                count = meter.total
+            if progress:
+                progress(
+                    phase,
+                    count * 8 / max(now - start[0], 1e-6) / 1e6,
+                    (count - previous_bytes) * 8 / max(now - previous, 1e-6) / 1e6,
+                )
+            previous, previous_bytes = now, count
+        for future in futures:
+            future.result()
+    elapsed = max(meter.finished_at - start[0], 1e-6)
+    # Download includes bytes delivered before a deadline/partial stream close;
+    # upload only includes application bodies explicitly acknowledged by the server.
+    count = meter.total
+    return {
+        "Mbps": round(count * 8 / elapsed / 1e6, 2) if count else None,
+        "bytes": count,
+        "seconds": round(elapsed, 3),
+        "errors": meter.errors,
+        "reserved": maximum - budget.remaining,
+    }
+
+
+def measure(progress=None, server=None, seconds=8, streams=8, max_bytes=1024**3):
+    if not 0 < seconds <= 15 or not 1 <= streams <= 12 or max_bytes < 8 * 1024:
+        raise ValueError("Parâmetros do teste fora dos limites.")
+    metrics = {
+        "Teste": "Velocidade · ResetExplode Linux",
+        "Motor": "Nativo Python · HTTP/TLS paralelo",
+    }
+
+    def emit(phase, rate=None):
         if progress:
             progress(
                 {
                     "event": "progress",
                     "phase": phase,
-                    "metrics": dict(output),
+                    "metrics": dict(metrics),
                     "rate": rate,
                 }
             )
 
-    notify("Conectando")
-
-    def request(path, data=None, downloading=False):
-        req = urllib.request.Request(
-            base.rstrip("/") + path,
-            data=data,
-            headers={
-                "User-Agent": "ResetExplode-Linux/0.1.2",
-                "Accept-Encoding": "identity",
-                "Cache-Control": "no-cache",
-                "Content-Type": "application/octet-stream",
-            },
-        )
-        start = time.perf_counter()
-        count = 0
-        last_update = start
-        with urllib.request.urlopen(req, timeout=15) as response:
-            while chunk := response.read(256 * 1024):
-                count += len(chunk)
-                now = time.perf_counter()
-                if downloading and now - last_update >= 0.15:
-                    notify("Download", count * 8 / max(now - start, 1e-6) / 1e6)
-                    last_update = now
-                if count > 64 * 1024**2:
-                    raise ValueError(
-                        "Resposta do servidor excedeu o limite de segurança."
-                    )
-        return count, max(time.perf_counter() - start, 1e-6)
-
-    notify("Latência")
-    latencies = [request(ping_path)[1] * 1000 for _ in range(samples)]
-    output = {
-        "Teste": "Velocidade · ResetExplode Linux",
-        "Servidor": base,
-        "Latência (ms)": round(statistics.median(latencies), 2),
-        "Jitter (ms)": round(statistics.pstdev(latencies), 2),
-    }
-    transferred = 0
-    notify("Download")
-    total_bytes = total_seconds = 0
-    for mib in sizes:
-        size = mib * 1024**2
-        count, elapsed = request(
-            down_path.format(bytes=size, mib=mib), downloading=True
-        )
-        if count != size:
-            raise ValueError("Download incompleto; velocidade não calculada.")
-        total_bytes += count
-        total_seconds += elapsed
-        transferred += count
-        output["Download (Mbps)"] = round(total_bytes * 8 / total_seconds / 1e6, 2)
-        notify("Download", output["Download (Mbps)"])
-        if elapsed >= 2:
-            break
-
-    # Small POST bodies are accepted by more public backends. On 413, reduce
-    # the next body; never retry the rejected body unchanged or bypass policy.
-    notify("Upload")
-    uploaded = upload_seconds = 0
-    body_size = 512 * 1024
-    target = sum(int(mib * 1024**2) for mib in sizes)
-    upload_start = time.perf_counter()
-    warning = None
-    while uploaded < target and time.perf_counter() - upload_start < 6:
-        size = min(body_size, target - uploaded)
-        try:
-            _, elapsed = request(up_path, os.urandom(size))
-        except urllib.error.HTTPError as exc:
-            if exc.code == 413 and size > 8 * 1024:
-                body_size = max(8 * 1024, size // 2)
-                notify("Reduzindo bloco de upload")
-                continue
-            warning = f"Upload não concluído: servidor respondeu HTTP {exc.code}."
-            break
-        except (OSError, ValueError) as exc:
-            warning = "Upload não concluído: " + str(exc)
-            break
-        uploaded += size
-        transferred += size
-        upload_seconds += elapsed
-        output["Upload (Mbps)"] = round(uploaded * 8 / upload_seconds / 1e6, 2)
-        notify("Upload", output["Upload (Mbps)"])
-    if not uploaded:
-        output["Upload (Mbps)"] = None
-    if warning:
-        output["Aviso"] = warning + " Download e latência foram preservados."
-        if uploaded:
-            output["Upload parcial"] = (
-                "Calculado somente com os blocos aceitos antes da interrupção."
-            )
-    output["Bloco de upload (KiB)"] = round(body_size / 1024, 1)
-    output["Tráfego de teste (MiB)"] = round(transferred / 1024**2, 2)
-    output["Método"] = (
-        "Uma conexão HTTPS por vez; inclui TLS e resposta do servidor. Não mede bufferbloat ou perda de pacotes."
-    )
-    notify("Concluído")
-    return output
-
-
-SERVER_LIST = "https://librespeed.org/backend-servers/servers.php"
-
-
-def discover_alternative():
-    request = urllib.request.Request(
-        SERVER_LIST, headers={"User-Agent": "ResetExplode-Linux/0.1.2"}
-    )
-    with urllib.request.urlopen(request, timeout=8) as response:
-        data = response.read(256 * 1024 + 1)
-    if len(data) > 256 * 1024:
-        raise ValueError("Lista de servidores excedeu o limite.")
-    servers = json.loads(data)
-    candidates = [
-        s
-        for s in servers
-        if isinstance(s, dict) and str(s.get("server", "")).startswith("https://")
-    ]
-    candidates.sort(
-        key=lambda s: (
-            not any(
-                region in s.get("name", "").lower()
-                for region in ("brazil", "brasil", "sao paulo", "são paulo")
-            )
-        )
-    )
-    best = None
-    for server in candidates[:4]:
-        base = server["server"].rstrip("/")
-        paths = (
-            tuple(
-                "/" + server[key].lstrip("/") for key in ("pingURL", "dlURL", "ulURL")
-            )
-            if all(key in server for key in ("pingURL", "dlURL", "ulURL"))
-            else None
-        )
-        if paths is None:
-            continue
-        # Paths from the directory must remain relative to the advertised server.
-        if any(".." in path or "://" in path for path in paths):
-            continue
-        start = time.perf_counter()
-        try:
-            with urllib.request.urlopen(base + paths[0], timeout=3) as response:
-                response.read(1024)
-            latency = time.perf_counter() - start
-            if best is None or latency < best[0]:
-                best = (latency, base, paths)
-        except (OSError, ValueError):
-            continue
-    if best is None:
-        raise ValueError(
-            "Nenhum servidor alternativo respondeu. Tente outra conexão ou novamente mais tarde."
-        )
-    _, base, paths = best
-    return base, (paths[0], paths[1] + "?ckSize={mib}", paths[2])
-
-
-def measure(base=DEFAULT_SERVER, sizes=(1, 4, 16, 32), samples=5, progress=None):
-    """Try a public alternative once on endpoint failure; no attempts to evade blocks.
-
-    Each attempt sends at most 107 MiB including rejected bodies; two attempts
-    total at most 214 MiB, excluding small headers and control requests.
-    Custom/local endpoints never trigger requests to the public directory.
-    """
+    emit("Selecionando servidor")
+    server = server or discover()
+    metrics.update({"Servidor": server.name, "ID do servidor": server.identifier})
+    clients = []
     try:
-        return _measure(base, sizes, samples, progress=progress)
-    except (OSError, ValueError) as first:
-        if base != DEFAULT_SERVER:
-            raise
-        try:
-            alternative, paths = discover_alternative()
-            if progress:
-                progress(
-                    {
-                        "event": "progress",
-                        "phase": "Trocando servidor",
-                        "metrics": {},
-                        "rate": None,
-                    }
+
+        def warm(_):
+            client = session()
+            try:
+                latency(client, server.latency)
+                return client
+            except (requests.RequestException, ValueError):
+                client.close()
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=streams) as pool:
+            clients = [
+                client
+                for client in pool.map(warm, range(streams))
+                if client is not None
+            ]
+        if not clients:
+            raise ValueError("O servidor escolhido deixou de responder.")
+        emit("Latência")
+        samples = [latency(clients[0], server.latency) for _ in range(5)]
+        metrics.update(
+            {
+                "Latência (ms)": round(statistics.median(samples), 2),
+                "Jitter (ms)": round(statistics.pstdev(samples), 2),
+                "Conexões paralelas": len(clients),
+            }
+        )
+        actual_bytes = 0
+        for upload, phase in ((False, "Download"), (True, "Upload")):
+            emit(phase)
+
+            def update(name, average, rate):
+                metrics[name + " (Mbps)"] = round(average, 2)
+                emit(name, rate)
+
+            result = transfer(
+                server, clients, upload, seconds, max_bytes, progress=update
+            )
+            metrics[phase + " (Mbps)"] = result["Mbps"]
+            actual_bytes += result["bytes"]
+            if result["errors"] or result["Mbps"] is None:
+                metrics[phase + " · aviso"] = (
+                    "Medição parcial/indisponível; o servidor interrompeu ou recusou transferências."
                 )
-            result = _measure(
-                alternative, sizes, samples, paths=paths, progress=progress
-            )
-            result["Servidor alternativo"] = (
-                "LibreSpeed — o primeiro servidor não aceitou ou não concluiu o teste."
-            )
-            return result
-        except (OSError, ValueError) as second:
+        metrics["Tráfego medido (MiB)"] = round(actual_bytes / MIB, 2)
+        metrics["Método"] = (
+            "Motor do aplicativo; sessões persistentes TLS e transferências paralelas. Taxa agregada calculada sobre o mesmo intervalo de tempo. Latência/jitter HTTP em conexão aquecida; não mede perda de pacotes ou bufferbloat."
+        )
+        metrics["Duração por etapa (s)"] = seconds
+        if not any(
+            metrics.get(key) is not None for key in ("Download (Mbps)", "Upload (Mbps)")
+        ):
             raise ValueError(
-                "Não foi possível medir a velocidade. O servidor principal falhou e a alternativa também. Confira a conexão/proxy e tente novamente. Detalhes: "
-                + str(first)
-                + "; "
-                + str(second)
-            ) from second
+                "O servidor não permitiu transferências suficientes para medir. Tente novamente."
+            )
+        emit("Concluído")
+        return metrics
+    finally:
+        for client in clients:
+            client.close()

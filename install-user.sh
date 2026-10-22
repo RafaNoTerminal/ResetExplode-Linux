@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 APP_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-PYTHONPATH="$APP_ROOT/src" /usr/bin/python3 -c 'import gi, cairo, psutil; gi.require_foreign("cairo"); gi.require_version("Gtk", "3.0"); from gi.repository import Gtk'
+PYTHONPATH="$APP_ROOT/src" /usr/bin/python3 -c 'import gi, cairo, psutil, requests; gi.require_foreign("cairo"); gi.require_version("Gtk", "3.0"); from gi.repository import Gtk'
 mkdir -p "$HOME/.local/share/applications"
 # Quote the executable according to Desktop Entry syntax, including paths with spaces.
 APP_ROOT="$APP_ROOT" /usr/bin/python3 - <<'PY'

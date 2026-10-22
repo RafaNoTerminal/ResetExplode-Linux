@@ -10,5 +10,5 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 1
 fi
 sudo apt-get update
-sudo apt-get install -y python3 python3-gi python3-cairo python3-gi-cairo python3-psutil gir1.2-gtk-3.0 pciutils usbutils iproute2 iputils-ping
+sudo apt-get install -y python3 python3-gi python3-cairo python3-gi-cairo python3-psutil python3-requests gir1.2-gtk-3.0 pciutils usbutils iproute2 iputils-ping
 exec "$APP_ROOT/install-user.sh"

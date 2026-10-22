@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reset-explode-linux"
-version = "0.1.3"
+version = "0.1.4"
 description = "Painel Linux de hardware, sensores e ferramentas, inspirado no RESET EXPLODE"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
-dependencies = ["psutil>=5.9"]
+dependencies = ["psutil>=5.9", "requests>=2.28"]
 
 [project.scripts]
 reset-explode-linux = "reset_explode_linux.app:main"

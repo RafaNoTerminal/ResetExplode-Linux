@@ -142,15 +142,7 @@ def decode_result(text):
         raise ValueError("Nenhum resultado completo recebido.")
 
 
-def speed_job(engine="auto"):
-    from . import ookla
-
-    if engine == "ookla" or (engine == "auto" and ookla.find_cli()):
-        return ookla.measure(
-            progress=lambda event: print(
-                json.dumps(event, ensure_ascii=False), flush=True
-            )
-        )
+def speed_job():
     from .speedtest import measure
 
     return measure(
@@ -161,7 +153,6 @@ def speed_job(engine="auto"):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("task", choices=["cpu", "memory", "disk", "network", "speed"])
-    p.add_argument("--engine", choices=["auto", "ookla", "https"], default="auto")
     p.add_argument("--seconds", type=int, default=5)
     p.add_argument("--threads", type=int, default=1)
     p.add_argument("--directory", default=str(pathlib.Path.home()))
@@ -174,7 +165,7 @@ def main():
             "memory": memory_bench,
             "disk": lambda: disk_bench(a.directory),
             "network": network_bench,
-            "speed": lambda: speed_job(a.engine),
+            "speed": speed_job,
         }[a.task]()
         if a.task == "speed":
             print(

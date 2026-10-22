@@ -2,13 +2,14 @@
 
 Implementação comunitária para Linux, inspirada na organização e nas funcionalidades do [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode), de GustavoReset. **Não é uma distribuição oficial do projeto Windows.**
 
-Versão inicial **0.1.3**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
+Versão inicial **0.1.4**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
 
 ## O que funciona
 
 - Painel de CPU, GPU, RAM, temperaturas e gráficos em tempo real.
 - Informações do sistema, placa-mãe/BIOS, vídeo, sensores disponíveis e energia/bateria.
 - Discos/montagens e leitura S.M.A.R.T. com smartmontools, inclusive opção de autorização do sistema para leitura.
+- Speedtest nativo, com seleção de servidor próximo, sessões TLS persistentes e até 8 conexões paralelas; não exige instalar outro programa de speedtest.
 - Diagnóstico de rede: latência, jitter e perda até gateway e destinos públicos.
 - Biblioteca Steam/manual e leitura de manifestos Heroic quando disponíveis.
 - Perfis por jogo, execução nativa ou Proton em prefixos próprios, GameMode e MangoHud.
@@ -65,7 +66,7 @@ Se clonou em outro local, use o caminho correspondente no `cd`. Se a pasta já e
 Para quem prefere gerenciar os pacotes manualmente, depois de clonar e entrar na pasta:
 
 ```sh
-sudo apt install python3 python3-gi python3-cairo python3-gi-cairo python3-psutil gir1.2-gtk-3.0 pciutils usbutils iproute2 iputils-ping
+sudo apt install python3 python3-gi python3-cairo python3-gi-cairo python3-psutil python3-requests gir1.2-gtk-3.0 pciutils usbutils iproute2 iputils-ping
 ./install-user.sh
 ./run.sh
 ```
@@ -130,35 +131,18 @@ Licença MIT, preservando `Copyright (c) 2026 Gustavo (GustavoReset)` e os aviso
 
 WPF, WMI, ETW, DXR, registro Windows e drivers `.sys` não são convertidos pelo REA ou Wine em APIs Linux. A estratégia desta migração é utilizar o código aberto como referência e implementar as funções com recursos nativos.
 
-### Revisão Linux
+## Speedtest nativo
 
-- Dados de hardware, energia e histórico em campos legíveis; resultados dos testes separados dos logs técnicos.
-- Monitor de RAM por programa e por processo, com RSS e porcentagem, atualizado enquanto a página está aberta.
-- Jogos detectados automaticamente, com Steam Flatpak e atalhos XDG Game.
-- Download/upload dentro do aplicativo, motor Python próprio. O servidor inicial usa a infraestrutura pública Cloudflare; se falhar ou bloquear o teste, há uma tentativa alternativa em servidor do diretório público LibreSpeed. Nenhum servidor é mantido pelo projeto. Uma conexão HTTPS por vez, até 107 MiB por tentativa/214 MiB incluindo a alternativa e blocos recusados, inclui TLS/HTTP e não mede bufferbloat.
-- Em Debian/Wayland, GPU usa glmark2-wayland; stress-ng e MangoHud são integrações opcionais da distribuição.
-- Desenvolvimento da implementação Linux realizado com Codex; referência original e licença MIT de GustavoReset preservadas.
+O teste é implementado no próprio aplicativo, em Python. **Não chama nem exige instalar Speedtest/Ookla, speedtest-cli ou outro executável.** A biblioteca HTTP `requests` é instalada automaticamente com as dependências normais pelo `install.sh`.
 
-### Correções 0.1.1
+Na aba **Rede**, clique em **Iniciar / testar novamente**. O aplicativo consulta um diretório de servidores públicos próximos, verifica respostas e certificados TLS, compara latência em conexões aquecidas e seleciona o servidor. Download e upload usam até8sessões persistentes em paralelo, com taxa calculada por bytes transferidos divididos pelo mesmo intervalo de tempo. Não soma taxas calculadas em intervalos diferentes.
 
-- Controles da janela com símbolos de texto: não dependem de callbacks Cairo para aparecer.
-- Instalador verifica a integração GTK/Cairo e fornece comando `reset-explode-linux` no diretório de binários do usuário.
-- Energia distingue carregador conectado, carga ativa, bateria cheia e carga pausada pelo firmware; dados não expostos aparecem como não informados.
-- Speedtest tenta um servidor LibreSpeed quando o endpoint inicial retorna erro (inclusive HTTP 403); falhas persistentes são explicadas sem apresentar velocidades inventadas.
+Cada etapa dura aproximadamente 8 segundos e reserva no máximo 1 GiB de payload por etapa. Requisições podem terminar alguns segundos depois por timeout; tráfego de protocolo/seleção é adicional. O teste pode ocupar a conexão e transferir cerca de 2 GiB. **Parar** encerra o worker e suas conexões; nada roda automaticamente ao abrir a aplicação.
 
-### Speedtest 0.1.2
+- Servidor, método, quantidade de conexões, download/upload, latência/jitter HTTP e tráfego medido ficam identificados no resultado.
+- Uploads HTTP413 têm o bloco reduzido até 8 KiB. Corpos recusados também consomem o orçamento da etapa.
+- Falha de upload preserva download e indica resultado parcial/indisponível; não inventa0Mbps.
+- Não desativa a validação TLS, não aceita termos automaticamente, não envia inventário nem publica o resultado. Os operadores dos servidores recebem o tráfego normal de conexão, incluindo o IP de origem.
+- Servidores externos e rotas influenciam os resultados. Não é o cliente oficial Ookla ou Cloudflare, não promete resultado idêntico e não mede perda de pacotes/bufferbloat. O diagnóstico de ping separado continua disponível.
 
-A página Rede apresenta download, upload, latência e jitter em cartões, com gráfico de tráfego e etapas ao vivo, inspirada na organização do teste Cloudflare. Não é o teste oficial da Cloudflare nem usa suas notas de qualidade. A variação exibida é de requisições HTTPS; não há medição de bufferbloat.
-
-O upload usa POSTs de até 512 KiB, reduzidos automaticamente até 8 KiB quando o servidor retorna HTTP 413. O teste considera somente os blocos aceitos para calcular a velocidade, incluindo o custo HTTPS de cada requisição, e limita essa fase a seis segundos entre requisições (cada requisição tem timeout de15s). Se o upload não puder ser medido, download/latência continuam visíveis e upload aparece como indisponível. Falhas após alguns blocos exibem o valor medido como parcial, com aviso. Um teste normal transfere no máximo106MiB; com erros e alternativa, até214MiB, mais o pequeno tráfego de controle.
-
-### Speedtest 0.1.3 — comparação com o terminal
-
-O painel oferece dois motores identificados no seletor:
-
-- **Speedtest oficial · Ookla**: usa o mesmo executável oficial do terminal, detectado automaticamente se instalado. O cliente seleciona o servidor; download/upload, latência/jitter, perda e latências sob carga informadas pelo CLI aparecem no painel. Não há troca silenciosa para HTTPS se esse motor falhar. O teste pode transferir vários GB; o limite de214MiB do diagnóstico HTTPS não se aplica a ele.
-- **Diagnóstico HTTPS**: teste próprio com requisições pequenas/sequenciais. Servidores distantes, TLS e overhead por requisição podem limitar muito a taxa observada. **Esse resultado não deve ser apresentado como capacidade do link nem comparado diretamente com o Ookla.** Mantido para diagnosticar transferências HTTP.
-
-Se a imagem do sistema não inclui o executável oficial `speedtest`, siga a [instalação oficial da Ookla](https://www.speedtest.net/apps/cli). O pacote Python `speedtest-cli` é outro programa; não é usado como substituto automático. O aplicativo não redistribui o binário proprietário, não adiciona repositórios de terceiros nem aceita termos do fabricante por você. Se for necessário no primeiro uso, execute `speedtest` no terminal para revisar os termos e só depois inicie pelo painel. Termos/privacidade aplicáveis são do fabricante.
-
-Os formatos JSON do CLI usam bytes por segundo; a interface converte para Mbps com `bandwidth × 8 / 1.000.000`. O adaptador guarda apenas métricas e identificação do servidor, omitindo IPs do cliente, ISP e IDs/URLs de compartilhamento do resultado. Abrir o aplicativo nunca executa medição automaticamente; o botão Parar encerra o grupo do teste, incluindo o CLI filho. A interface limita a tarefa a180segundos.
+As versões 0.1.0–0.1.2 usavam requisições pequenas/sequenciais que podiam subestimar a capacidade, principalmente em servidores distantes. A versão 0.1.3 integrou temporariamente um CLI externo; a 0.1.4 substitui essa dependência pelo motor nativo.
