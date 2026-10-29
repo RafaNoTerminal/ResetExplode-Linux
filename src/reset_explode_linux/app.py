@@ -205,11 +205,11 @@ class Application(Gtk.Application):
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
         self.win = Gtk.ApplicationWindow(application=self)
-        self.win.set_title("RESET EXPLODE · Linux")
+        self.win.set_title("RBT Diagnóstico · Linux")
         self.win.set_default_size(1190, 790)
         self.win.connect("delete-event", self.close)
         header = Gtk.HeaderBar(
-            title="RESET EXPLODE · LINUX", subtitle=f"Comunidade · {__version__}"
+            title="RBT DIAGNÓSTICO · LINUX", subtitle=f"Comunidade · {__version__}"
         )
         header.set_show_close_button(False)
         self.window_controls = {}
@@ -1419,7 +1419,7 @@ class Application(Gtk.Application):
     def about_page(self, box):
         self.label(
             box,
-            "RESET EXPLODE Linux — desenvolvido com Codex para Linux. Implementação comunitária em Python/GTK 3. Referência de organização e funcionalidades: RESET EXPLODE, de GustavoReset (MIT). Não é uma versão oficial do autor original.",
+            "RBT Diagnóstico Linux — desenvolvido com Codex para Linux. Implementação comunitária em Python/GTK 3. Referência de organização e funcionalidades: RESET EXPLODE, de GustavoReset (MIT). Não é uma versão oficial do autor original.",
             "subtitle",
         )
         self.label(
@@ -1735,7 +1735,7 @@ class Application(Gtk.Application):
         d.add_buttons(
             "Cancelar", Gtk.ResponseType.CANCEL, "Salvar", Gtk.ResponseType.OK
         )
-        d.set_current_name("reset-explode-linux.html")
+        d.set_current_name("rbt-diagnostico-linux.html")
         d.set_do_overwrite_confirmation(True)
         if d.run() == Gtk.ResponseType.OK:
             data = {

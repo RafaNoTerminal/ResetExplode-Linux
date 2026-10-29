@@ -8,5 +8,7 @@
 
 O projeto não inclui jogos, ISOs, drivers proprietários, chaves, firmware, binários do Windows ou programas de terceiros.
 
+A distribuição executável Windows inclui o runtime .NET e Windows Forms (Microsoft/.NET Foundation, MIT e avisos de terceiros), e as bibliotecas System.Management/System.CodeDom (MIT). Os avisos e licenças correspondentes acompanham o executável em `Licencas-dotnet`. Os binários de runtime não são adicionados ao código-fonte Git. A interface Windows e os métodos de teste foram implementados neste projeto.
+
 - Biblioteca Python Requests e dependências são instaladas pela distribuição, sem código vendorizado neste repositório. Documentação do pooling: https://requests.readthedocs.io/en/latest/user/advanced/ .
 - O motor de medição é código deste projeto. Consulta o diretório público de servidores da Speedtest.net e endpoints HTTP/TLS dos respectivos provedores. Não inclui o cliente oficial Ookla, não chama executáveis de terceiros e não utiliza as marcas para alegar que seja um teste oficial. Nenhum binário proprietário ou código do cliente speedtest-cli é redistribuído. Os servidores externos são operados pelos respectivos provedores.

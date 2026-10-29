@@ -3,14 +3,15 @@ requires = ["setuptools>=66"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reset-explode-linux"
-version = "0.1.4"
+name = "rbt-diagnostico-linux"
+version = "0.2.0"
 description = "Painel Linux de hardware, sensores e ferramentas, inspirado no RESET EXPLODE"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
 dependencies = ["psutil>=5.9", "requests>=2.28"]
 
 [project.scripts]
+rbt-diagnostico-linux = "reset_explode_linux.app:main"
 reset-explode-linux = "reset_explode_linux.app:main"
 
 [tool.setuptools.packages.find]

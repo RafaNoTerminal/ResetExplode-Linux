@@ -10,3 +10,12 @@ dist/
 *.core
 .env
 .ruff_cache/
+
+# Compilações Windows e relatórios de máquinas
+**/bin/
+**/obj/
+windows/artifacts/
+windows/TestResults/
+smoke-result.txt
+diagnostico-*.html
+diagnostico-*.json

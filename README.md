@@ -1,10 +1,16 @@
-# RESET EXPLODE Linux
+# RBT Diagnóstico · Linux e Windows
 
 Implementação comunitária para Linux, inspirada na organização e nas funcionalidades do [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode), de GustavoReset. **Não é uma distribuição oficial do projeto Windows.**
 
-Versão inicial **0.1.4**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
+Versão **0.2.0**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
 
-## O que funciona
+## Windows portátil para testes de TI
+
+A versão Windows está em [`windows/`](windows/README.md), com aplicativo nativo e portátil para Windows 10/11 x64. A distribuição inclui o runtime .NET: não é preciso instalar Python, PowerShell adicional ou um CLI de speedtest. Hardware/WMI, processos, CPU, memória, disco temporário, rede, tela/teclado/mouse/áudio, ajustes/remover apps com prévia e backup, diagnóstico Vivobook/ASUS e relatórios locais HTML/JSON. Recursos e métodos diferem da versão Linux; veja a documentação Windows.
+
+O nome exibido nas duas versões é **RBT Diagnóstico**. O endereço deste repositório e a pasta Linux foram preservados para manter instalações existentes. O comando novo é `rbt-diagnostico-linux`; o comando antigo `reset-explode-linux` e os diretórios de dados continuam compatíveis. Créditos e licenças originais foram preservados.
+
+## O que funciona no Linux
 
 - Painel de CPU, GPU, RAM, temperaturas e gráficos em tempo real.
 - Informações do sistema, placa-mãe/BIOS, vídeo, sensores disponíveis e energia/bateria.
@@ -38,7 +44,7 @@ cd "$HOME/ResetExplode-Linux"
 ./run.sh
 ```
 
-O `install.sh` instala dependências dos repositórios Debian/Ubuntu (com sudo), incluindo `python3-gi-cairo`, e cria o atalho **RESET EXPLODE Linux** no menu. A aplicação roda com seu usuário, sem sudo. O projeto deve ficar nessa pasta, pois os atalhos apontam para ela.
+O `install.sh` instala dependências dos repositórios Debian/Ubuntu (com sudo), incluindo `python3-gi-cairo`, e cria o atalho **RBT Diagnóstico Linux** no menu. A aplicação roda com seu usuário, sem sudo. O projeto deve ficar nessa pasta, pois os atalhos apontam para ela.
 
 Depois de instalar, abra pelo menu ou de qualquer pasta pelo terminal:
 
@@ -76,7 +82,7 @@ sudo apt install python3 python3-gi python3-cairo python3-gi-cairo python3-psuti
 Para remover os atalhos (sem apagar código ou configurações):
 
 ```sh
-rm ~/.local/share/applications/reset-explode-linux.desktop ~/.local/bin/reset-explode-linux
+rm ~/.local/share/applications/reset-explode-linux.desktop ~/.local/bin/reset-explode-linux ~/.local/bin/rbt-diagnostico-linux
 ```
 
 Ferramentas opcionais são instaladas **somente por uma ação explícita** na interface e pelo gerenciador da distribuição: `lm-sensors`, `smartmontools`, `mangohud`, `stress-ng`, `glmark2-wayland` (ou `glmark2` no X11), `gamemode`, `openrgb`. Nenhuma é baixada ao abrir a aplicação.

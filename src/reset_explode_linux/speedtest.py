@@ -36,7 +36,7 @@ def session():
     client = requests.Session()
     client.headers.update(
         {
-            "User-Agent": "ResetExplode-Linux/0.1.4",
+            "User-Agent": "RBT-Diagnostico-Linux/0.2.0",
             "Accept-Encoding": "identity",
             "Cache-Control": "no-cache",
         }
@@ -269,7 +269,7 @@ def measure(progress=None, server=None, seconds=8, streams=8, max_bytes=1024**3)
     if not 0 < seconds <= 15 or not 1 <= streams <= 12 or max_bytes < 8 * 1024:
         raise ValueError("Parâmetros do teste fora dos limites.")
     metrics = {
-        "Teste": "Velocidade · ResetExplode Linux",
+        "Teste": "Velocidade · RBT Diagnóstico Linux",
         "Motor": "Nativo Python · HTTP/TLS paralelo",
     }
 

@@ -1,0 +1,32 @@
+namespace Diagnostico.Windows;
+
+static class Program
+{
+    [STAThread]
+    static int Main(string[] args)
+    {
+        ApplicationConfiguration.Initialize();
+        if (args.Length >= 1 && args[0] == "--smoke-test") {
+            try {
+                using var form = new MainForm(collectOnShow: false); form.Show(); Application.DoEvents();
+                form.VerifyUi();
+                var inventory = Inventory.Collect();
+                if (!inventory.Any(x => x.Grupo == "CPU" && x.Campo == "Modelo")) throw new Exception("CPU ausente no inventário.");
+                if (Inventory.Memory().Total <= 0 || Inventory.Processes().Count == 0) throw new Exception("Coleta Windows falhou.");
+                Automation.VerifyRegistryCodec();
+                // Parse the exact embedded PowerShell, but never invoke package removal in CI.
+                var actions = AutomationCatalog.Select(["app:Microsoft.GetHelp"]);
+                var script = AutomationCatalog.PackageScript(actions, apply: true);
+                string parse = "$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseInput([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(script)) + "')),[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){throw ($errors|Out-String)}";
+                using (var ps = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")) { UseShellExecute = false, CreateNoWindow = true, Arguments = "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(parse)) })) { ps!.WaitForExit(); if(ps.ExitCode != 0) throw new Exception("Sintaxe PowerShell inválida."); }
+                if (args.Length >= 2) {
+                    using var image = new Bitmap(form.Width, form.Height); form.DrawToBitmap(image, form.ClientRectangle); image.Save(args[1]);
+                }
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-result.txt"), "OK · 10 páginas, inventário WMI, RAM, processos, backup em chave isolada, sintaxe PowerShell; nenhuma carga ou ajuste real aplicado.");
+                form.Close(); return 0;
+            } catch (Exception e) { File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-result.txt"), e.ToString()); return 1; }
+        }
+        Application.ThreadException += (_, e) => MessageBox.Show(e.Exception.Message, Brand.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        Application.Run(new MainForm()); return 0;
+    }
+}

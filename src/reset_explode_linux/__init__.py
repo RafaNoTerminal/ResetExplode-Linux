@@ -1,3 +1,3 @@
-"""RESET EXPLODE Linux — community implementation."""
+"""RBT Diagnóstico Linux — hardware e ferramentas."""
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
