@@ -36,14 +36,18 @@ internal static class OneDriveDetection
         }.Distinct(StringComparer.OrdinalIgnoreCase).Where(File.Exists).ToArray();
         return new(registrations.ToArray(), clients, errors.ToArray());
     }
+    internal static string SignatureDetails { get; private set; } = "";
     internal static async Task<bool> MicrosoftSigned(string file)
     {
         string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(file));
-        string script = "$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "'));$s=Get-AuthenticodeSignature -LiteralPath $p;[bool]($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match '(?i)(^|,)\\s*O=\"?Microsoft Corporation\"?(,|$)')|ConvertTo-Json -Compress";
+        string script = "$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "'));$s=Get-AuthenticodeSignature -LiteralPath $p;[pscustomobject]@{Status=[string]$s.Status;Subject=[string]$s.SignerCertificate.Subject;Valid=[bool]($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match '(?i)(^|,)\\s*O=\"?Microsoft Corporation\"?(,|$)')}|ConvertTo-Json -Compress";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         try {
             var outcome = await Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], timeout.Token);
-            return outcome.ExitCode == 0 && JsonSerializer.Deserialize<bool>(outcome.Output.Trim());
+            SignatureDetails = outcome.Code + " / " + outcome.Output + " / " + outcome.Error;
+            if (outcome.ExitCode != 0) return false;
+            using var data = JsonDocument.Parse(outcome.Output.Trim());
+            return data.RootElement.GetProperty("Valid").GetBoolean();
         } catch (OperationCanceledException) { return false; }
     }
     internal static Task<OperationRow> Uninstall(CancellationToken ct) => OneDriveUninstall.Execute(

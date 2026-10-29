@@ -51,7 +51,7 @@ internal static class SmokeChecks
         var outcome = Task.Run(() => Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "cmd.exe"), ["/d", "/c", "exit", "/b", "-2147219813"], CancellationToken.None)).GetAwaiter().GetResult();
         if (outcome.ExitCode != -2147219813 || !outcome.Code.Contains("0x8004069B")) throw new Exception("Código nativo do processo foi convertido incorretamente.");
         string signed = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
-        if (!Task.Run(() => OneDriveDetection.MicrosoftSigned(signed)).GetAwaiter().GetResult()) throw new Exception("Assinatura Microsoft válida não foi reconhecida.");
+        if (!Task.Run(() => OneDriveDetection.MicrosoftSigned(signed)).GetAwaiter().GetResult()) throw new Exception("Assinatura Microsoft válida não foi reconhecida: " + OneDriveDetection.SignatureDetails);
         string unsigned = Path.Combine(Path.GetTempPath(), "onedrive-signature-fixture-" + Guid.NewGuid().ToString("N") + ".exe");
         try {
             File.WriteAllText(unsigned, "Signature check fixture, not an executable.");
