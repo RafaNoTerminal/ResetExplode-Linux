@@ -60,12 +60,14 @@ public static class AutomationCatalog
             [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
             $rows = [System.Collections.Generic.List[object]]::new()
             function Item($scope,$name,$state,$details){$rows.Add([pscustomobject]@{Escopo=$scope;Pacote=$name;Estado=$state;Detalhes=$details})}
+            function Protected($p){return ($p.NonRemovable -eq $true -or $p.Name -eq 'Microsoft.XboxGameCallableUI' -or $p.DisplayName -eq 'Microsoft.XboxGameCallableUI')}
             """ + "\n$patterns=@(" + patterns + ")\n" + "$apply=$" + apply.ToString().ToLowerInvariant() + ";$provisioned=$" + provisioned.ToString().ToLowerInvariant() + "\n" + """
             foreach($pattern in $patterns){
               try {
                 $packages=@(Get-AppxPackage -Name $pattern -ErrorAction Stop)
                 if($packages.Count -eq 0){Item 'Perfil atual' $pattern 'Ausente' ''}
                 foreach($p in $packages){
+                  if(Protected $p){Item 'Perfil atual' $p.PackageFullName 'Preservado' 'Componente protegido do Windows; não pode ser desinstalado por este fluxo. Nenhuma remoção foi tentada.';continue}
                   try {if($apply){Remove-AppxPackage -Package $p.PackageFullName -ErrorAction Stop};Item 'Perfil atual' $p.PackageFullName $(if($apply){'Removido'}else{'Encontrado'}) ''}
                   catch{Item 'Perfil atual' $p.PackageFullName 'Erro' $_.Exception.Message}
                 }
@@ -73,6 +75,7 @@ public static class AutomationCatalog
                   $future=@(Get-AppxProvisionedPackage -Online -ErrorAction Stop|Where-Object {$_.DisplayName -like $pattern})
                   if($future.Count -eq 0){Item 'Novos perfis' $pattern 'Ausente' ''}
                   foreach($p in $future){
+                    if(Protected $p){Item 'Novos perfis' $p.PackageName 'Preservado' 'Componente protegido do Windows; provisionamento mantido.';continue}
                     try {if($apply){Remove-AppxProvisionedPackage -Online -PackageName $p.PackageName -ErrorAction Stop|Out-Null};Item 'Novos perfis' $p.PackageName $(if($apply){'Removido'}else{'Encontrado'}) ''}
                     catch{Item 'Novos perfis' $p.PackageName 'Erro' $_.Exception.Message}
                   }

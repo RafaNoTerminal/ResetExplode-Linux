@@ -9,7 +9,7 @@ public sealed partial class MainForm : Form
     readonly Panel content = new() { Dock = DockStyle.Fill, Padding = new Padding(28, 22, 28, 20) };
     readonly ListBox menu = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, ItemHeight = 42, IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed };
     readonly Label status = new() { Dock = DockStyle.Bottom, Height = 40, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(18, 0, 12, 0), Text = "Pronto · os testes começam somente pelos botões." };
-    readonly Button stop = new() { Text = "Parar teste", Dock = DockStyle.Right, Width = 132, Enabled = false };
+    readonly Button stop = new() { Text = "Parar teste", Dock = DockStyle.Right, Width = 132, Enabled = false, Visible = false };
     readonly List<TestResult> results = [];
     readonly List<Button> runButtons = [];
     List<InfoRow> inventory = [];
@@ -32,7 +32,7 @@ public sealed partial class MainForm : Form
         menu.SelectedIndexChanged += (_, _) => ShowPage(menu.SelectedIndex);
         sidebar.Controls.Add(menu); sidebar.Controls.Add(brand); sidebar.Controls.Add(footer);
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 42, BackColor = Surface }; bottom.Controls.Add(stop); bottom.Controls.Add(status); status.Dock = DockStyle.Fill;
-        stop.Click += (_, _) => { task?.Cancel(); stop.Enabled = false; status.Text = "Interrompendo a tarefa…"; };
+        stop.Click += (_, _) => { task?.Cancel(); stop.Enabled = false; stop.Visible = false; status.Text = "Interrompendo a tarefa…"; };
         Controls.Add(content); Controls.Add(bottom); Controls.Add(sidebar);
         timer.Tick += (_, _) => { UpdateMemory(); if (menu.SelectedIndex == 2 && task is null) RefreshProcesses(); };
         Shown += async (_, _) => { timer.Start(); if (collectOnShow) await LoadInventory(); };
@@ -106,7 +106,7 @@ public sealed partial class MainForm : Form
         resultsGrid = Grid(); RefreshResults();
         var speed = Actions(); Button(speed, "Medir velocidade da internet", () => ConfirmRun("Internet", "Download e upload com até 8 conexões, cerca de 8 segundos por fase. Pode consumir até 2 GiB + seleção de servidor. Continuar?", ct => SpeedTest.Run(new Progress<SpeedProgress>(p => status.Text = p.Stage + (p.Mbps > 0 ? " · " + p.Mbps.ToString("N2") + " Mbps" : "")), ct)), true);
         var ping = Actions(); var host = new TextBox { Text = "1.1.1.1", Width = 220, BackColor = Surface, ForeColor = Ink, Margin = new Padding(0, 4, 12, 0) }; ping.Controls.Add(host);
-        Button(ping, "Testar DNS e ping", () => _ = Run("DNS e ping", ct => NetworkDiagnostics.PingHost(host.Text, ct)), true);
+        Button(ping, "Testar DNS e ping", () => _ = Run("DNS e ping", ct => NetworkDiagnostics.PingHost(host.Text, ct), cancellableTest: true), true);
         Heading("Rede e internet", "Ping/DNS para um destino e medição nativa de velocidade. Firewall ou servidor podem limitar respostas e taxas. Inventário não é transmitido.");
     }
     void BuildPeripherals()
@@ -115,19 +115,19 @@ public sealed partial class MainForm : Form
         var actions = Actions(); Button(actions, "Tela · cores", () => new DisplayTest().Show(this)); Button(actions, "Teclado e mouse", () => new InputTest().Show(this)); Button(actions, "Áudio · estéreo", () => _ = RunAudio(), true);
         Heading("Tela e periféricos", "Testes manuais para conferir os dispositivos conectados a este PC.");
     }
-    async Task RunAudio() { await Run("Áudio estéreo", async ct => { await AudioTest.Play(ct); return TestResult.Done("Áudio estéreo", ("Sequência", "Esquerdo → direito → ambos"), ("Avaliação", "Confirme pelo ouvido; reprodução não comprova som físico.")); }); }
+    async Task RunAudio() { await Run("Áudio estéreo", async ct => { await AudioTest.Play(ct); return TestResult.Done("Áudio estéreo", ("Sequência", "Esquerdo → direito → ambos"), ("Avaliação", "Confirme pelo ouvido; reprodução não comprova som físico.")); }, cancellableTest: true); }
     void ConfirmRun(string name, string message, Func<CancellationToken, Task<TestResult>> job) {
         if (task is not null) return;
-        if (MessageBox.Show(this, message, Brand.Name, MessageBoxButtons.OKCancel, MessageBoxIcon.Information) == DialogResult.OK) _ = Run(name, job);
+        if (MessageBox.Show(this, message, Brand.Name, MessageBoxButtons.OKCancel, MessageBoxIcon.Information) == DialogResult.OK) _ = Run(name, job, cancellableTest: true);
     }
-    async Task Run(string name, Func<CancellationToken, Task<TestResult>> job)
+    async Task Run(string name, Func<CancellationToken, Task<TestResult>> job, bool cancellableTest = false)
     {
         if (task is not null) return;
-        task = new CancellationTokenSource(); stop.Enabled = true; foreach (var b in runButtons) b.Enabled = false; status.Text = name + " · executando…";
+        task = new CancellationTokenSource(); stop.Enabled = cancellableTest; stop.Visible = cancellableTest; foreach (var b in runButtons) b.Enabled = false; status.Text = name + " · executando…";
         try { var result = await job(task.Token); results.Add(result); status.Text = result.Teste + " · " + result.Estado; }
         catch (OperationCanceledException) { results.Add(new(name, "Cancelado", new() { ["Observação"] = "Teste interrompido; não representa aprovação ou falha do hardware." }, DateTimeOffset.Now)); status.Text = name + " · cancelado"; }
         catch (Exception e) { results.Add(new(name, "Não concluído", new() { ["Erro"] = e.Message }, DateTimeOffset.Now)); status.Text = name + " · não concluído"; MessageBox.Show(this, e.Message, Brand.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
-        finally { task.Dispose(); task = null; stop.Enabled = false; foreach (var b in runButtons) b.Enabled = true; RefreshResults(); if (closing) Close(); }
+        finally { task.Dispose(); task = null; stop.Enabled = false; stop.Visible = false; foreach (var b in runButtons) b.Enabled = true; RefreshResults(); if (closing) Close(); }
     }
     async Task LoadInventory()
     {
@@ -138,7 +138,7 @@ public sealed partial class MainForm : Form
     }
     void RefreshProcesses() { if (processGrid is not null) { try { processGrid.DataSource = Inventory.Processes(); } catch (Exception e) { status.Text = "Processos: " + e.Message; } } }
     void UpdateMemory() { if (metrics is not null) { var m = Inventory.Memory(); metrics.Text = "RAM total: " + Inventory.GiB(m.Total) + "     Disponível: " + Inventory.GiB(m.Available) + "\nEm uso: " + Inventory.GiB(m.Total - m.Available); } }
-    void RefreshResults() { if (resultsGrid is not null) resultsGrid.DataSource = results.AsEnumerable().Reverse().Select(r => new { Teste = r.Teste, Estado = r.Estado, Horário = r.Data.LocalDateTime.ToString("g"), Resultado = string.Join(Environment.NewLine, r.Dados.Select(p => p.Key + ": " + (p.Value ?? "Indisponível"))) }).ToList(); }
+    void RefreshResults() { if (resultsGrid is not null) resultsGrid.DataSource = results.AsEnumerable().Reverse().Select(r => new { Teste = r.Teste, Estado = r.Estado, Horário = r.Data.LocalDateTime.ToString("g"), Resultado = OperationResults.Summary(r) }).ToList(); }
     void Export()
     {
         using var dialog = new FolderBrowserDialog { Description = "Salvar relatório HTML e JSON nesta pasta", UseDescriptionForTitle = true };

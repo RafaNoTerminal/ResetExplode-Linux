@@ -17,6 +17,15 @@ string packageScript = AutomationCatalog.PackageScript(setup, apply: false);
 Check(packageScript.Contains("$apply=$false") && packageScript.Contains("'Microsoft.GetHelp'"), "Prévia Appx não está limitada à seleção");
 Check(!packageScript.Contains("Remove-Item ") && !packageScript.Contains("WindowsStore") && !packageScript.Contains("WindowsCalculator"), "Remoção alcança arquivos pessoais ou apps fora da seleção");
 Check(AutomationCatalog.All.Where(a => a.Id is "usb-ac" or "pcie-ac").All(a => a.Registry is null && a.Power!.All(p => p.Value == 0)), "Teste de energia deve usar somente índice AC previsto");
+var operation = new TestResult("Ajustes do Windows", "Concluído com falhas", new() { ["Etapas"] = new[] {
+    new OperationRow("Barra", "HKCU\\Teste", "Perfil atual", "Erro", "Acesso negado 0x80070005"),
+    new OperationRow("Remover app", "Microsoft.XboxGameCallableUI", "Perfil atual", "Preservado", "Componente protegido.") } }, DateTimeOffset.Now);
+var operationRows = OperationResults.Read(operation);
+Check(operationRows.Count == 2 && operationRows.Count(r => r.Failed) == 1, "Componente preservado confundido com falha");
+Check(OperationResults.Summary(operation).Contains("Microsoft.XboxGameCallableUI") && OperationResults.Summary(operation).Contains("0x80070005"), "Resumo da interface perdeu o nome ou motivo da falha");
+Check(Reports.Html(operation).Contains("0x80070005") && Reports.Json(operation).Contains("Microsoft.XboxGameCallableUI"), "Erro/item perdido nas exportações");
+var legacy = new TestResult("Ajustes do Windows", "Falhas", new() { ["Barra"] = "Erro: Attempted to perform an unauthorized operation.", ["Pacotes Appx"] = new[] { new { Escopo = "Perfil atual", Pacote = "Microsoft.XboxGameCallableUI_fixture", Estado = "Erro", Detalhes = "0x80073CFA / 0x80070032" } } }, DateTimeOffset.Now);
+Check(OperationResults.Read(legacy).Count(r => r.Failed) == 2, "As falhas do formato antigo não foram preservadas");
 Check(NetworkDiagnostics.ValidateHost(" 1.1.1.1 ") == "1.1.1.1", "IP válido rejeitado");
 await Reject<ArgumentException>(() => NetworkDiagnostics.PingHost("example.com; rm", CancellationToken.None));
 await Reject<ArgumentException>(() => NetworkDiagnostics.PingHost("https://example.com/", CancellationToken.None));

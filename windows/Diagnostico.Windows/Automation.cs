@@ -20,7 +20,7 @@ public static class Automation
     static RegistryKey Root(bool machine) => machine ? Registry.LocalMachine : Registry.CurrentUser;
     public static void Validate(SetupAction[] actions) {
         AutomationCatalog.Select(actions.Select(a => a.Id));
-        if (actions.Any(a => a.Admin) && !Admin) throw new UnauthorizedAccessException("A seleção requer administrador. Reabra o aplicativo com o botão “Reabrir como administrador”, selecione novamente e confira o perfil de destino.");
+        if (actions.Any(a => a.Admin) && !Admin) throw new UnauthorizedAccessException("A seleção requer administrador. Feche e abra novamente o aplicativo confirmando a solicitação do Windows.");
         if (Environment.OSVersion.Version.Build >= 22000 && actions.Any(a => a.Windows10Only)) throw new InvalidOperationException("A seleção contém ajustes exclusivos do Windows 10. Desmarque-os neste Windows 11.");
     }
     static RegistryBackup Capture(RegistryChange change) {
@@ -69,40 +69,49 @@ public static class Automation
         await File.WriteAllTextAsync(file, Reports.Json(backup), new UTF8Encoding(false), ct);
         // The backup is durable before any change. Each individual failure remains visible.
         var details = new Dictionary<string, object?> { ["Backup dos ajustes"] = file, ["Observação"] = "Registro/energia/inicialização podem ser restaurados. Apps removidos precisam de reinstalação. Alguns ajustes exigem nova sessão/reinício manual." };
+        var steps = new List<OperationRow>();
+        string Error(Exception e) => e.Message + $" (HRESULT 0x{e.HResult:X8})";
         async Task<TestResult> Save(string state) {
+            details["Etapas"] = steps.ToArray();
+            details["Resumo"] = $"{steps.Count(s => s.Failed)} falha(s); {steps.Count(s => s.Estado == "Preservado")} componente(s) protegido(s) preservado(s); {steps.Count(s => s.Estado == "Ausente")} app(s) já ausente(s).";
             var result = new TestResult("Ajustes do Windows", state, details, DateTimeOffset.Now);
             await File.WriteAllTextAsync(Path.ChangeExtension(file, ".resultado.json"), Reports.Json(result), new UTF8Encoding(false)); return result;
         }
-        bool failed = false;
         foreach (var action in actions.Where(a => a.AppPattern is null && a.Id != "provisioned")) {
             if (ct.IsCancellationRequested) { details["Interrupção"] = "As ações já aplicadas estão no backup; as restantes não foram iniciadas."; return await Save("Interrompido parcialmente"); }
-            try {
-                foreach (var change in action.Registry ?? []) {
+            foreach (var change in action.Registry ?? []) {
+                string item = (change.Machine ? "HKLM\\" : "HKCU\\") + change.Path + "\\" + change.Name;
+                try {
                     using var key = Root(change.Machine).CreateSubKey(change.Path, writable: true);
                     if (change.Delete) key.DeleteValue(change.Name, throwOnMissingValue: false);
                     else key.SetValue(change.Name, change.Kind == "DWord" ? int.Parse(change.Value) : change.Value, change.Kind == "DWord" ? RegistryValueKind.DWord : RegistryValueKind.String);
-                }
-                foreach (var change in action.Power ?? []) {
+                    steps.Add(new(action.Title, item, action.Scope, "Aplicado", change.Delete ? "Entrada de inicialização removida, se existia." : "Valor definido: " + change.Value));
+                } catch (Exception e) { steps.Add(new(action.Title, item, action.Scope, "Erro", Error(e) + " O valor não pôde ser alterado; permissões ou políticas do Windows podem impedir a gravação mesmo como administrador.")); }
+            }
+            foreach (var change in action.Power ?? []) {
+                try {
                     var prior = backup.Power.First(p => p.Setting == change.Setting); Power.Write(prior.Plan, change.Subgroup, change.Setting, change.Value);
-                }
-                if (action.Operation == "onedrive") {
+                    steps.Add(new(action.Title, change.Setting, action.Scope, "Aplicado", "Índice AC: " + change.Value));
+                } catch (Exception e) { steps.Add(new(action.Title, change.Setting, action.Scope, "Erro", Error(e))); }
+            }
+            if (action.Operation == "onedrive") {
+                try {
                     string? setup = new[] { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64", "OneDriveSetup.exe"), Path.Combine(Environment.SystemDirectory, "OneDriveSetup.exe") }.FirstOrDefault(File.Exists);
-                    if (setup is null) { details[action.Title] = "Instalador não encontrado; nenhuma desinstalação executada."; continue; }
+                    if (setup is null) { steps.Add(new(action.Title, "OneDrive", action.Scope, "Ausente", "Instalador não encontrado; nenhuma desinstalação executada.")); continue; }
                     await RunProcess(setup, ["/uninstall"], CancellationToken.None);
-                }
-                details[action.Title] = "Aplicado";
-            } catch (Exception e) { details[action.Title] = "Erro: " + e.Message; failed = true; }
+                    steps.Add(new(action.Title, "OneDrive", action.Scope, "Aplicado", "Desinstalador concluído. Pastas e arquivos pessoais preservados."));
+                } catch (Exception e) { steps.Add(new(action.Title, "OneDrive", action.Scope, "Erro", Error(e))); }
+            }
         }
         if (ct.IsCancellationRequested) { details["Interrupção"] = "As etapas restantes não foram iniciadas."; return await Save("Interrompido parcialmente"); }
         if (actions.Any(a => a.AppPattern is not null)) {
             try {
                 string text = await Packages(actions, true, CancellationToken.None);
-                using var json = JsonDocument.Parse(text); details["Pacotes Appx"] = json.RootElement.Clone();
-                failed |= json.RootElement.EnumerateArray().Any(x => x.GetProperty("Estado").GetString() == "Erro");
-            } catch (Exception e) { details["Pacotes Appx"] = "Erro: " + e.Message; failed = true; }
+                steps.AddRange(OperationResults.Packages(text));
+            } catch (Exception e) { steps.Add(new("Remover apps", "Execução PowerShell / retorno do Windows", "Seleção de apps", "Erro", Error(e))); }
         }
         // Store the execution log next to the prior-state backup; never overwrite the prior state.
-        return await Save(failed ? "Concluído com falhas; conferir detalhes" : "Concluído");
+        return await Save(steps.Any(s => s.Failed) ? "Concluído com falhas; conferir detalhes" : "Concluído");
     }
     public static async Task<TestResult> Restore(string file) {
         var b = JsonSerializer.Deserialize<SetupBackup>(await File.ReadAllTextAsync(file)) ?? throw new IOException("Backup inválido.");
@@ -131,9 +140,6 @@ public static class Automation
         string text = await output, failure = await error;
         if (process.ExitCode != 0) throw new IOException("Ferramenta retornou " + process.ExitCode + ": " + failure);
         return text.TrimStart('\uFEFF').Trim();
-    }
-    public static void Elevate() {
-        Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" });
     }
     // Windows-only fixture; calls the same snapshot codec with isolated test keys, never real settings.
     public static void VerifyRegistryCodec() {

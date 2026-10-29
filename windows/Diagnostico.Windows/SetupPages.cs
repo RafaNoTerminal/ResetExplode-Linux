@@ -5,6 +5,8 @@ namespace Diagnostico.Windows;
 public sealed partial class MainForm
 {
     List<InfoRow> vivobook = [];
+    TestResult? lastSetupResult;
+    Button? lastSetupButton;
     void BuildAutomation(bool notebook = false)
     {
         var selected = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, BackColor = Surface, ForeColor = Ink, BorderStyle = BorderStyle.None, Font = new Font(Font.FontFamily, 11), IntegralHeight = false };
@@ -18,7 +20,7 @@ public sealed partial class MainForm
         Button(actions, "Ver prévia", () => _ = ReviewSetup(Current, false), true);
         Button(actions, "Revisar e aplicar", () => _ = ReviewSetup(Current, true), true);
         Button(actions, "Restaurar backup", RestoreSetup, true);
-        if (!Automation.Admin) Button(actions, "Reabrir como admin", () => { try { Automation.Elevate(); } catch (Exception e) { MessageBox.Show(this, e.Message, Brand.Name); } });
+        var history = Actions(); lastSetupButton = Button(history, "Último resultado", () => { if (lastSetupResult is not null) { using var dialog = SetupResultDialog(lastSetupResult); dialog.ShowDialog(this); } }); lastSetupButton.Enabled = lastSetupResult is not null;
         Heading(notebook ? "Vivobook · ajustes de teste" : "Ajustes do Windows", "Marque apenas o que deseja aplicar. A prévia mostra as mudanças; registro e energia têm backup local antes da alteração. Perfil de destino: " + Environment.UserName + (Automation.Admin ? " · administrador" : " · usuário comum"));
     }
     async Task ReviewSetup(Func<SetupAction[]> getActions, bool apply)
@@ -41,7 +43,11 @@ public sealed partial class MainForm
             if (!apply || !confirm) return TestResult.Done("Prévia dos ajustes", ("Ações", actions.Select(a => a.Title).ToArray()), ("Mudanças aplicadas", "Nenhuma"));
             // Appx servicing/uninstall is allowed to finish its current transaction.
             stop.Enabled = false; status.Text = "Aplicando seleção · aguarde a etapa atual concluir…";
-            return await Automation.Apply(actions, ct);
+            var result = await Automation.Apply(actions, ct);
+            lastSetupResult = result;
+            if (lastSetupButton is { IsDisposed: false }) lastSetupButton.Enabled = true;
+            using (var dialog = SetupResultDialog(result)) dialog.ShowDialog(this);
+            return result;
         });
     }
     void RestoreSetup()
