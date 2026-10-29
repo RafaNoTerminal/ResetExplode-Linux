@@ -40,8 +40,11 @@ internal static class OneDriveDetection
     {
         string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(file));
         string script = "$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "'));$s=Get-AuthenticodeSignature -LiteralPath $p;[bool]($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match '(?i)(^|,)\\s*O=\"?Microsoft Corporation\"?(,|$)')|ConvertTo-Json -Compress";
-        var outcome = await Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], CancellationToken.None);
-        return outcome.ExitCode == 0 && JsonSerializer.Deserialize<bool>(outcome.Output.Trim());
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try {
+            var outcome = await Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], timeout.Token);
+            return outcome.ExitCode == 0 && JsonSerializer.Deserialize<bool>(outcome.Output.Trim());
+        } catch (OperationCanceledException) { return false; }
     }
     internal static Task<OperationRow> Uninstall(CancellationToken ct) => OneDriveUninstall.Execute(
         () => Task.Run(Read), File.Exists, MicrosoftSigned,
