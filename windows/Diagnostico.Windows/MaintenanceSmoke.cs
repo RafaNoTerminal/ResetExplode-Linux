@@ -8,6 +8,13 @@ internal static class MaintenanceSmoke
     internal static void Verify()
     {
         _ = DeviceDetection.Read();
+        using (var monitor = new SensorMonitor()) {
+            var first = monitor.Read(start: true, fixture: true);
+            if (first.Count != 1 || first[0].Unidade != "°C" || first[0].Tipo != "Temperature" || !monitor.Active) throw new Exception("IPC de temperaturas falhou.");
+            monitor.Dispose();
+            if (monitor.Active) throw new Exception("Leitor de sensores não encerrou.");
+            if (monitor.Read(start: true, fixture: true).Count != 1) throw new Exception("Leitor não recarregou após fechar.");
+        }
         _ = ActivationService.EngineBytes(); // Hash only; never execute the real engine in CI.
         _ = ActivationService.Read();
         var directory = ActivationService.PrivateDirectory();

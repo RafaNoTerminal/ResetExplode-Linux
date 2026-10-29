@@ -27,7 +27,7 @@ internal static class SensorSupport
             if (signature.ExitCode != 0) throw new IOException("Suporte de sensores não executado. " + signature.Error);
             ct.ThrowIfCancellationRequested();
             using var process = Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }) ?? throw new IOException("Instalador não iniciou."); await process.WaitForExitAsync();
-            return new("Suporte de sensores PawnIO", process.ExitCode is 0 or 3010 ? "Instalador concluiu; reabrir RBT e conferir sensores" : "Instalador não concluiu", new() { ["Versão"] = Version, ["Retorno"] = process.ExitCode, ["SHA256"] = Hash, ["Assinante"] = signature.Output, ["Observação"] = "Driver opcional instalado pelo instalador original. Feche e reabra o RBT para recarregar a biblioteca. Se o instalador indicar reinício, faça-o manualmente. Nenhuma proteção de drivers foi desativada." }, DateTimeOffset.Now);
+            return new("Suporte de sensores PawnIO", process.ExitCode is 0 or 3010 ? "Instalador concluiu; recarregando monitor de sensores" : "Instalador não concluiu", new() { ["Versão"] = Version, ["Retorno"] = process.ExitCode, ["SHA256"] = Hash, ["Assinante"] = signature.Output, ["Observação"] = "Driver opcional instalado pelo instalador original. O leitor separado será iniciado novamente para recarregar a biblioteca. Se o instalador indicar reinício, faça-o manualmente. Nenhuma proteção de drivers foi desativada." }, DateTimeOffset.Now);
         } finally { try { directory.Delete(true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
 }

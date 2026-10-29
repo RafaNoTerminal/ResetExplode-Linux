@@ -1,4 +1,4 @@
-# RBT Diagnóstico · Windows 0.4.0
+# RBT Diagnóstico · Windows 0.4.1
 
 Aplicativo portátil para testar PCs Windows 10 22H2 / Windows 11 de 64 bits (x64). Dê dois cliques em **RBT-Diagnostico.exe**. O runtime .NET está incluído: o PC não precisa instalar .NET, Python, GTK ou outro programa de speedtest. Ao abrir, o aplicativo solicita acesso de administrador pelo UAC do Windows, conforme o manifesto incorporado. Se a confirmação for cancelada, o aplicativo não abre. Políticas corporativas podem restringir executáveis não assinados; o aplicativo não altera essas políticas.
 
@@ -107,3 +107,8 @@ São16abas: visão geral, inventário/hardware, processos/RAM, testes CPU/RAM/di
 **Central Helpdesk:** catálogo local de instaladores, drivers e manuais da pasta configurada. MSI usa `/passive /norestart`; EXE conserva o instalador interativo porque switches de fornecedor não são adivinhados. Instaladores são copiados para pasta temporária protegida e precisam de assinaturaAuthenticode válida; SHA256/assinante/retorno entram no resultado. Abrir um manual/pasta não é marcado como instalação. Para pasta de drivers, é possível selecionar umINF dentro dela e chamarPNPUtil com confirmação; oWindows exige assinatura. Não distribui instaladores da empresa noGit e não executa scripts antigos de manutenção em bloco. Requer rede para esses arquivos; a biblioteca não representa uma cópia offline de todos os pacotes.
 
 **Manutenção:** SFCverificar/reparar, DISMcheck/scan/restore/componentcleanup e limpezaDNS com saída/código real noapp. Não interrompe transações nem reiniciaautomaticamente; código0 não vira certificado de reparo/estabilidade. InventárioDefender/firewall/serviços/inicialização/discos é somenteleitura. Limpeza de temporários exige prévia e confirmação; apenas arquivos com maisde7dias, nas pastasTemp permitidas, sem seguirlinks, revalidando data/tamanho. Ignora recentes/emuso/alterados e preserva Lixeira, Downloads, documentos e cacheWindowsUpdate.
+
+
+### Temperaturas0.4.1
+
+Corrigida a leituraCPU: ela não é mais desativada por uma detecção prévia dePawnIO. O monitor executa num processo de leitura separado para recarregar a detecção estática do driver depois da instalação, sem fechar o RBT/perder relatórios. **Ler / recarregar sensores** inicia uma nova leitura; instalação do suporte recarrega o monitor. Se o instalador exigir reinício doWindows, permanece manual. Visualização inicial destaca temperaturas°C, agrupadas por hardware e com atual/mínimo/máximo; desmarque o filtro para carga/RPM/tensão/consumo. Valores ausentes continuam sem estimativa. CI valida comunicação/recarga com fixtureidentificada, nunca inventa leitura física deCPU noWindowsrunner. Campo ainda precisa confirmar suporte real do hardware.

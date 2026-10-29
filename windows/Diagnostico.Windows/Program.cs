@@ -5,6 +5,8 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--sensor-worker") return SensorWorker.Run();
+        if (args.Length > 0 && args[0] == "--sensor-worker-fixture") return SensorWorker.Run(fixture: true);
         ApplicationConfiguration.Initialize();
         if (args.Length >= 1 && args[0] == "--smoke-test") {
             try {
