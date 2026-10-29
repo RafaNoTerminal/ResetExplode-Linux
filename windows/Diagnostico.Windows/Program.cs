@@ -16,6 +16,9 @@ static class Program
                 Automation.VerifyRegistryCodec();
                 // Parse the exact embedded PowerShell, but never invoke package removal in CI.
                 var actions = AutomationCatalog.Select(["app:Microsoft.GetHelp"]);
+                var packagePreview = Task.Run(() => Automation.Packages(actions, apply: false, CancellationToken.None)).GetAwaiter().GetResult();
+                using (var preview = System.Text.Json.JsonDocument.Parse(packagePreview)) { if(preview.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) throw new Exception("Prévia Appx não retornou lista."); }
+                if(Vivobook.Collect().Count == 0) throw new Exception("Coleta ASUS ausente.");
                 var script = AutomationCatalog.PackageScript(actions, apply: true);
                 string parse = "$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseInput([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(script)) + "')),[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){throw ($errors|Out-String)}";
                 using (var ps = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")) { UseShellExecute = false, CreateNoWindow = true, Arguments = "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(parse)) })) { ps!.WaitForExit(); if(ps.ExitCode != 0) throw new Exception("Sintaxe PowerShell inválida."); }

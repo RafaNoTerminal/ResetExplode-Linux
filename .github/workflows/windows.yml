@@ -41,6 +41,7 @@ jobs:
           Copy-Item THIRD_PARTY.md windows/artifacts/windows-x64/THIRD_PARTY.md
           $licenses = New-Item -ItemType Directory -Force windows/artifacts/windows-x64/Licencas-dotnet
           foreach ($package in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64','system.management','system.codedom')) {
+            if (-not (Test-Path "$env:USERPROFILE/.nuget/packages/$package")) { continue }
             $version = Get-ChildItem "$env:USERPROFILE/.nuget/packages/$package" -Directory | Sort-Object { [version]$_.Name } | Select-Object -Last 1
             Get-ChildItem $version.FullName -File | Where-Object { $_.Name -match '^(LICENSE|THIRD-PARTY-NOTICES)' } | ForEach-Object { Copy-Item $_.FullName (Join-Path $licenses.FullName "$package-$($_.Name)") }
           }
