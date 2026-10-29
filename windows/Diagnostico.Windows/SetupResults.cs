@@ -83,6 +83,12 @@ public sealed partial class MainForm
         oneDrivePlan = new(null, [], "Perfil atual", "Erro", "Consulta não confirmada."); refreshAppChoices!();
         Check(choices.Items.Cast<SetupAction>().Any(a => a.Id == "onedrive"), "OneDrive com detecção incerta foi ocultado como ausente.");
         Capture(this, "-lista");
+        menu.SelectedIndex = 7; Application.DoEvents(); Capture(this, "-vivobook");
+        Check(content.Controls.OfType<FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<Button>()).Any(b => b.Text == "Aplicar ajustes do checklist"), "Ajustes baseados no histórico Vivobook ausentes.");
+        menu.SelectedIndex = 10; Application.DoEvents(); Capture(this, "-atualizacoes");
+        Check(content.Controls.OfType<CheckedListBox>().Single().Items.Count == 0, "Atualizações iniciaram sem busca explícita.");
+        menu.SelectedIndex = 11; Application.DoEvents(); Capture(this, "-ferramentas");
+        Check(task is null, "Ferramenta externa foi iniciada automaticamente.");
         appInventory = savedInventory; oneDrivePlan = savedDrivePlan; menu.SelectedIndex = 0;
         results.Clear(); status.Text = "Pronto · os testes começam somente pelos botões."; Check(task is null && !stop.Visible, "Teste de UI deixou tarefa ou botão ativo.");
     }
