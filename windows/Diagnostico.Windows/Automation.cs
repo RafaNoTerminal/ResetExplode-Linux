@@ -139,6 +139,9 @@ public static class Automation
     }
     internal static async Task<ProcessOutcome> CaptureProcess(string executable, string[] arguments, CancellationToken ct) {
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
+        // PowerShell 7 callers may pass incompatible module paths to Windows PowerShell 5.1.
+        if (executable.Equals(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), StringComparison.OrdinalIgnoreCase))
+            start.Environment["PSModulePath"] = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "Modules") + ";" + Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsPowerShell", "Modules");
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new IOException("Não foi possível iniciar a ferramenta do Windows.");
         var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
