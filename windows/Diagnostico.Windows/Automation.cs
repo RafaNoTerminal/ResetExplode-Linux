@@ -45,6 +45,10 @@ public static class Automation
         Validate(actions); var backup = Capture(actions); var rows = new List<ChangePreview>();
         foreach (var action in actions) {
             rows.Add(new(action.Title, action.Scope, "Selecionado", action.Description));
+            if (action.Operation == "onedrive") {
+                var snapshot = await Task.Run(OneDriveDetection.Read, ct); var plan = OneDriveUninstall.Plan(snapshot, File.Exists);
+                rows.Add(new(action.Title, plan.Scope, plan.State, plan.Details));
+            }
             foreach (var change in action.Registry ?? []) {
                 var prior = backup.Registry.First(p => p.Machine == change.Machine && p.Path == change.Path && p.Name == change.Name);
                 rows.Add(new(action.Title, (change.Machine ? "HKLM\\" : "HKCU\\") + change.Path + "\\" + change.Name, prior.Exists ? prior.Value ?? "" : "Valor ausente", change.Delete ? "Remover entrada" : change.Value));
@@ -96,10 +100,7 @@ public static class Automation
             }
             if (action.Operation == "onedrive") {
                 try {
-                    string? setup = new[] { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64", "OneDriveSetup.exe"), Path.Combine(Environment.SystemDirectory, "OneDriveSetup.exe") }.FirstOrDefault(File.Exists);
-                    if (setup is null) { steps.Add(new(action.Title, "OneDrive", action.Scope, "Ausente", "Instalador não encontrado; nenhuma desinstalação executada.")); continue; }
-                    await RunProcess(setup, ["/uninstall"], CancellationToken.None);
-                    steps.Add(new(action.Title, "OneDrive", action.Scope, "Aplicado", "Desinstalador concluído. Pastas e arquivos pessoais preservados."));
+                    steps.Add(await OneDriveDetection.Uninstall(CancellationToken.None));
                 } catch (Exception e) { steps.Add(new(action.Title, "OneDrive", action.Scope, "Erro", Error(e))); }
             }
         }
@@ -117,7 +118,7 @@ public static class Automation
         var b = JsonSerializer.Deserialize<SetupBackup>(await File.ReadAllTextAsync(file)) ?? throw new IOException("Backup inválido.");
         if (b.Application != Brand.Name || b.Computer != Environment.MachineName || b.UserSid != WindowsIdentity.GetCurrent().User!.Value) throw new IOException("Backup pertence a outro aplicativo, computador ou perfil. Abra pelo mesmo perfil e PC de origem.");
         var actions = AutomationCatalog.Select(b.Actions); Validate(actions);
-        foreach (var r in b.Registry) if (!actions.SelectMany(a => a.Registry ?? []).Any(c => c.Machine == r.Machine && c.Path == r.Path && c.Name == r.Name)) throw new IOException("Backup contém chave fora da seleção permitida.");
+        foreach (var r in b.Registry) if (!AutomationCatalog.RestorableRegistry(actions).Any(c => c.Machine == r.Machine && c.Path == r.Path && c.Name == r.Name)) throw new IOException("Backup contém chave fora da seleção permitida.");
         foreach (var p in b.Power) if (!actions.SelectMany(a => a.Power ?? []).Any(c => c.Subgroup == p.Subgroup && c.Setting == p.Setting)) throw new IOException("Backup contém energia fora da seleção permitida.");
         var errors = new List<string>();
         foreach (var r in b.Registry.Reverse()) {
@@ -132,14 +133,18 @@ public static class Automation
         return await RunProcess(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], ct);
     }
     static async Task<string> RunProcess(string executable, string[] arguments, CancellationToken ct) {
+        var result = await CaptureProcess(executable, arguments, ct);
+        if (result.ExitCode != 0) throw new IOException("Ferramenta " + executable + " retornou " + result.Code + ": " + result.Error);
+        return result.Output;
+    }
+    internal static async Task<ProcessOutcome> CaptureProcess(string executable, string[] arguments, CancellationToken ct) {
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new IOException("Não foi possível iniciar a ferramenta do Windows.");
         var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
         try { await process.WaitForExitAsync(ct); } catch (OperationCanceledException) { if (!process.HasExited) process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); throw; }
         string text = await output, failure = await error;
-        if (process.ExitCode != 0) throw new IOException("Ferramenta retornou " + process.ExitCode + ": " + failure);
-        return text.TrimStart('\uFEFF').Trim();
+        return new(process.ExitCode, text.TrimStart('\uFEFF').Trim(), failure);
     }
     // Windows-only fixture; calls the same snapshot codec with isolated test keys, never real settings.
     public static void VerifyRegistryCodec() {

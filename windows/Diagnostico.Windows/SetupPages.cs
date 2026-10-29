@@ -8,6 +8,7 @@ public sealed partial class MainForm
     TestResult? lastSetupResult;
     Button? lastSetupButton;
     List<OperationRow>? appInventory;
+    OneDrivePlan? oneDrivePlan;
     Action? refreshAppChoices;
     void BuildAutomation(bool notebook = false)
     {
@@ -21,16 +22,18 @@ public sealed partial class MainForm
             selected.BeginUpdate(); selected.Items.Clear();
             foreach (var action in options) {
                 if (action.AppPattern is not null && appInventory is not null && !OperationResults.StillPresent(action, appInventory)) continue;
+                if (action.Operation == "onedrive" && oneDrivePlan?.State == "Ausente") continue;
                 var item = action;
                 if (action.AppPattern is not null && appInventory is not null) {
                     var rows = OperationResults.ForAction(action, appInventory);
                     string suffix = rows.Any(r => r.Failed) ? " · consulta com falha" : rows.Any(r => r.Estado == "Preservado") ? " · protegido" : rows.Any(r => r.Escopo == "Novos perfis" && r.Estado == "Encontrado") && !rows.Any(r => r.Escopo == "Perfil atual" && r.Estado == "Encontrado") ? " · somente novos perfis" : "";
                     item = action with { Title = action.Title + suffix };
                 }
+                if (action.Operation == "onedrive" && oneDrivePlan is not null) item = action with { Title = action.Title + (oneDrivePlan.State == "Erro" ? " · instalação a conferir" : ""), Description = action.Description + "\r\nDetecção atual: " + oneDrivePlan.Details, Scope = oneDrivePlan.Scope };
                 int index = selected.Items.Add(item); selected.SetItemChecked(index, checkedIds.Contains(action.Id));
             }
             selected.EndUpdate();
-            if (!notebook) listStatus.Text = appInventory is null ? "Consultando apps… Use Atualizar lista para conferir novamente." : appInventory.Any(r => r.Failed) ? "Consulta com falhas: os itens não confirmados continuam visíveis. Consulte a prévia para os motivos." : $"Apps/grupos presentes: {selected.Items.Cast<SetupAction>().Count(a => a.AppPattern is not null)} · removidos e já ausentes ficam fora da lista. Novos perfis também são conferidos.";
+            if (!notebook) listStatus.Text = appInventory is null ? "Consultando apps… Use Atualizar lista para conferir novamente." : appInventory.Any(r => r.Failed) || oneDrivePlan?.State == "Erro" ? "Consulta com pendências: os itens não confirmados continuam visíveis. Consulte a prévia para os motivos." : $"Apps/grupos presentes: {selected.Items.Cast<SetupAction>().Count(a => a.AppPattern is not null || a.Operation == "onedrive")} · removidos e já ausentes ficam fora da lista. Novos perfis também são conferidos.";
         }
         Populate(); if (!notebook) refreshAppChoices = Populate;
         selected.SelectedIndexChanged += (_, _) => { if (selected.SelectedItem is SetupAction action) description.Text = action.Title + "\r\nEscopo: " + action.Scope + "\r\n" + action.Description; };
@@ -66,7 +69,7 @@ public sealed partial class MainForm
             // Appx servicing/uninstall is allowed to finish its current transaction.
             stop.Enabled = false; status.Text = "Aplicando seleção · aguarde a etapa atual concluir…";
             var result = await Automation.Apply(actions, ct);
-            if (actions.Any(a => a.AppPattern is not null)) {
+            if (actions.Any(a => a.AppPattern is not null || a.Operation == "onedrive")) {
                 status.Text = "Atualizando os apps que ficaram…";
                 try { await ReadAppInventory(CancellationToken.None); }
                 catch (Exception e) { result.Dados["Aviso ao atualizar lista"] = e.Message; }
@@ -82,7 +85,9 @@ public sealed partial class MainForm
         var actions = AutomationCatalog.Select(AutomationCatalog.All.Where(a => a.AppPattern is not null).Select(a => a.Id).Append("provisioned"));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromSeconds(45));
         string json = await Automation.Packages(actions, apply: false, timeout.Token);
-        appInventory = OperationResults.Packages(json); refreshAppChoices?.Invoke();
+        var packages = OperationResults.Packages(json);
+        var native = await Task.Run(OneDriveDetection.Read, timeout.Token);
+        appInventory = packages; oneDrivePlan = OneDriveUninstall.Plan(native, File.Exists); refreshAppChoices?.Invoke();
     }
     async Task RefreshAppList()
     {

@@ -29,6 +29,10 @@ public sealed partial class MainForm
         table.CellFormatting += (_, e) => { if (e.RowIndex >= 0 && table.Rows[e.RowIndex].DataBoundItem is OperationRow row && e.CellStyle is not null) e.CellStyle.ForeColor = row.Failed ? Color.FromArgb(255, 152, 152) : row.Estado == "Preservado" ? Color.FromArgb(255, 211, 129) : Ink; };
         var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 55, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(10) };
         var close = new Button { Text = "Fechar", Width = 120, Height = 34, DialogResult = DialogResult.OK }; footer.Controls.Add(close); dialog.CancelButton = close;
+        if (rows.Any(r => r.Failed && r.Acao.Contains("OneDrive", StringComparison.OrdinalIgnoreCase))) {
+            var apps = new Button { Text = "Abrir aplicativos do Windows", Width = 230, Height = 34 };
+            apps.Click += (_, _) => OpenLink("ms-settings:appsfeatures"); footer.Controls.Add(apps);
+        }
         dialog.Controls.Add(table); dialog.Controls.Add(filter); dialog.Controls.Add(summary); dialog.Controls.Add(detail); dialog.Controls.Add(footer);
         dialog.Shown += (_, _) => Render();
         return dialog;
@@ -68,13 +72,18 @@ public sealed partial class MainForm
             dialog.Close();
         }
         var savedInventory = appInventory;
+        var savedDrivePlan = oneDrivePlan;
+        oneDrivePlan = OneDriveUninstall.Plan(new([], [], []), _ => true);
         appInventory = [new("App", "Microsoft.GetHelp_fixture", "Perfil atual", "Removido", ""), new("App", "Microsoft.GamingApp_fixture", "Perfil atual", "Erro", "Bloqueado"), new("App", "Microsoft.XboxGameCallableUI_fixture", "Perfil atual", "Preservado", "Protegido")];
         menu.SelectedIndex = 6; Application.DoEvents();
         var choices = content.Controls.OfType<CheckedListBox>().Single();
         Check(!choices.Items.Cast<SetupAction>().Any(a => a.Id == "app:Microsoft.GetHelp"), "App removido continuou no checklist.");
         Check(choices.Items.Cast<SetupAction>().Any(a => a.Id == "app:Microsoft.GamingApp") && choices.Items.Cast<SetupAction>().Any(a => a.Id == "app:Microsoft.Xbox*"), "Falhas ou protegidos sumiram do checklist.");
+        Check(!choices.Items.Cast<SetupAction>().Any(a => a.Id == "onedrive"), "OneDrive ausente permaneceu como remoção disponível.");
+        oneDrivePlan = new(null, [], "Perfil atual", "Erro", "Consulta não confirmada."); refreshAppChoices!();
+        Check(choices.Items.Cast<SetupAction>().Any(a => a.Id == "onedrive"), "OneDrive com detecção incerta foi ocultado como ausente.");
         Capture(this, "-lista");
-        appInventory = savedInventory; menu.SelectedIndex = 0;
+        appInventory = savedInventory; oneDrivePlan = savedDrivePlan; menu.SelectedIndex = 0;
         results.Clear(); status.Text = "Pronto · os testes começam somente pelos botões."; Check(task is null && !stop.Visible, "Teste de UI deixou tarefa ou botão ativo.");
     }
 }

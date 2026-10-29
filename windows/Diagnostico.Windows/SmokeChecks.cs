@@ -46,6 +46,11 @@ internal static class SmokeChecks
         if (!process.WaitForExit(15000)) { process.Kill(true); throw new Exception("Fixture Appx excedeu tempo."); }
         if (process.ExitCode != 0) throw new Exception("Fixture Appx: " + error.GetAwaiter().GetResult() + output.GetAwaiter().GetResult());
     }
+    internal static void VerifyNativeExitCode()
+    {
+        var outcome = Task.Run(() => Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "cmd.exe"), ["/d", "/c", "exit", "/b", "-2147219813"], CancellationToken.None)).GetAwaiter().GetResult();
+        if (outcome.ExitCode != -2147219813 || !outcome.Code.Contains("0x8004069B")) throw new Exception("Código nativo do processo foi convertido incorretamente.");
+    }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string? name);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindResource(IntPtr module, IntPtr name, IntPtr type);
     [DllImport("kernel32.dll")] static extern IntPtr LoadResource(IntPtr module, IntPtr resource);
