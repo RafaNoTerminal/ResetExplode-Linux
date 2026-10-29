@@ -17,6 +17,9 @@ public static class AutomationCatalog
         var actions = new List<SetupAction>();
         foreach (var (pattern, title) in new (string, string)[] {
             ("Microsoft.Xbox*", "Xbox e componentes Xbox"), ("Microsoft.GamingApp", "Aplicativo Xbox / Gaming App"),
+            ("Microsoft.OutlookForWindows", "Outlook (novo, Appx; não remove a suíte Office)"),
+            ("Microsoft.549981C3F5F10", "Cortana (app independente)"),
+            ("Microsoft.windowscommunicationsapps", "Email e Calendário (legado)"),
             ("Microsoft.GetHelp", "Obter Ajuda"), ("Microsoft.Getstarted", "Dicas / Introdução"),
             ("Microsoft.Microsoft3DViewer", "Visualizador 3D"), ("Microsoft.MicrosoftOfficeHub", "Hub Microsoft 365 / Office"),
             ("Microsoft.MicrosoftSolitaireCollection", "Solitaire Collection"), ("Microsoft.MixedReality.Portal", "Portal de Realidade Mista"),

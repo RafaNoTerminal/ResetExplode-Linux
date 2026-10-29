@@ -39,7 +39,7 @@ public static class OperationResults
         if (document.RootElement.ValueKind != JsonValueKind.Array) throw new InvalidDataException("O Windows não retornou uma lista de resultados dos apps.");
         return document.RootElement.EnumerateArray().Select(row => {
             string Value(string key) => row.TryGetProperty(key, out var value) ? value.ToString() : "";
-            return new OperationRow("Remover app", Value("Pacote"), Value("Escopo"), Value("Estado"), Value("Detalhes"));
+            return new OperationRow(row.TryGetProperty("Acao", out var action) ? action.ToString() : "Remover app", Value("Pacote"), Value("Escopo"), Value("Estado"), Value("Detalhes"));
         }).ToList();
     }
     public static string Format(object? value) => value is string text ? text : JsonSerializer.Serialize(value, Reports.JsonOptions);

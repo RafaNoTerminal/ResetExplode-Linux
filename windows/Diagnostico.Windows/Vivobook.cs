@@ -10,6 +10,12 @@ public static class Vivobook
         Inventory.Query(rows, "Modelo / BIOS", "Win32_BIOS", new() { ["SMBIOSBIOSVersion"] = "Versão BIOS" });
         Inventory.Query(rows, "Windows", "Win32_OperatingSystem", new() { ["Caption"] = "Edição", ["Version"] = "Versão", ["BuildNumber"] = "Build" });
         Inventory.Query(rows, "Driver de vídeo / rede / USB", "Win32_PnPSignedDriver", new() { ["DeviceName"] = "Dispositivo", ["DriverProviderName"] = "Fornecedor", ["DriverVersion"] = "Versão", ["DriverDate"] = "Data WMI", ["InfName"] = "Arquivo INF", ["IsSigned"] = "Assinado" }, "DeviceClass='DISPLAY' OR DeviceClass='NET' OR DeviceClass='USB'");
+        var profile = DeviceDetection.Read();
+        rows.Add(new("Detecção", "Tipo de equipamento", profile.Kind + " · " + profile.Evidence));
+        rows.Add(new("Caso do histórico", "Sintoma", "Monitor externo piscando ou sumindo; comparar HDMI direta, cabo e comportamento após tampa/bloqueio."));
+        rows.Add(new("Caso do histórico", "Driver AMD", "Confira fornecedor Advanced Micro Devices no vídeo. Microsoft Basic Display Adapter/driver genérico é pendência; o modelo exato define o pacote ASUS. 25H2 é versão do Windows, não de driver."));
+        try { foreach (var hub in UsbHubPower.Read()) rows.Add(new("Hubs USB · energia", hub.Instance, "Windows pode gerenciar energia: " + hub.Enable)); }
+        catch (Exception e) { rows.Add(new("Hubs USB · energia", "Consulta", "Não exposto pelo driver ou sem acesso: " + e.Message)); }
         foreach (var screen in Screen.AllScreens) rows.Add(new("Monitores detectados", screen.DeviceName, $"{screen.Bounds.Width} × {screen.Bounds.Height} · posição {screen.Bounds.X},{screen.Bounds.Y} · principal={screen.Primary}"));
         try {
             var plan = Power.Active(); rows.Add(new("Energia", "Plano ativo", plan.ToString()));

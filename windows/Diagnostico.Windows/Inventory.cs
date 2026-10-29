@@ -14,6 +14,8 @@ public static class Inventory
     {
         var rows = new List<InfoRow>();
         void Add(string group, string label, object? value) => rows.Add(new(group, label, value?.ToString() ?? "Indisponível"));
+        var profile = DeviceDetection.Read();
+        Add("Equipamento", "Tipo detectado", profile.Kind); Add("Equipamento", "Critério de detecção", profile.Evidence);
         Add("Sistema", "Computador", Environment.MachineName);
         Add("Sistema", "Arquitetura", RuntimeInformation.OSArchitecture);
         Add("Sistema", "Aplicativo", Brand.Name + " " + Brand.Version + " · Windows portátil");

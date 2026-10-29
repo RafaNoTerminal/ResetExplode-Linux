@@ -16,7 +16,7 @@ public sealed partial class MainForm
         table.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.FromArgb(43, 52, 64), ForeColor = Ink, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(5) };
         table.DefaultCellStyle = new DataGridViewCellStyle { BackColor = Surface, ForeColor = Ink, SelectionBackColor = Color.FromArgb(48, 83, 91), SelectionForeColor = Ink, Padding = new Padding(5) };
         table.RowTemplate.Height = 38; table.GridColor = Color.FromArgb(57, 65, 77);
-        void Details() { detail.Text = table.CurrentRow?.DataBoundItem is OperationRow row ? row.Acao + "\r\n" + row.Item + "\r\nEscopo: " + row.Escopo + "\r\nResultado: " + row.Estado + "\r\n\r\n" + row.Detalhes : "Nenhum item neste filtro. Escolha Todos os resultados para conferir a execução completa."; }
+        void Details() { detail.Text = table.CurrentRow?.DataBoundItem is OperationRow row ? row.Acao + "\r\n" + row.Item + "\r\nEscopo: " + row.Escopo + "\r\nResultado: " + row.Estado + "\r\n\r\n" + row.Detalhes : rows.Count == 0 ? OperationResults.Summary(result) : "Nenhum item neste filtro. Escolha Todos os resultados para conferir a execução completa."; }
         void Render() {
             table.DataSource = rows.Where(r => filter.SelectedIndex switch { 1 => r.Failed, 2 => r.Estado == "Removido", 3 => r.Estado == "Preservado", _ => true }).ToList();
             if (table.Columns["Acao"] is { } actionColumn) actionColumn.HeaderText = "Ação";

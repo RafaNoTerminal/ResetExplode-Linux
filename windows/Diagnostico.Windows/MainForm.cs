@@ -12,6 +12,7 @@ public sealed partial class MainForm : Form
     readonly Button stop = new() { Text = "Parar teste", Dock = DockStyle.Right, Width = 132, Enabled = false, Visible = false };
     readonly List<TestResult> results = [];
     readonly List<Button> runButtons = [];
+    DeviceProfile device = DeviceProfile.Detect("", "", 0, []);
     List<InfoRow> inventory = [];
     CancellationTokenSource? task;
     bool closing;
@@ -19,7 +20,7 @@ public sealed partial class MainForm : Form
     Label? metrics;
     readonly System.Windows.Forms.Timer timer = new() { Interval = 4000 };
     readonly bool automaticQueries;
-    readonly string[] pages = ["Visão geral", "Hardware e sistema", "Processos e memória", "Testes de desempenho", "Rede e internet", "Tela e periféricos", "Ajustes do Windows", "Vivobook / ASUS", "Resultados e relatório", "Sobre"];
+    readonly string[] pages = ["Visão geral", "Hardware e sistema", "Processos e memória", "Testes de desempenho", "Rede e internet", "Tela e periféricos", "Ajustes do Windows", "Vivobook / ASUS", "Resultados e relatório", "Sobre", "Atualizações", "Ferramentas / ativação"];
 
     public MainForm(bool collectOnShow = true)
     {
@@ -81,7 +82,9 @@ public sealed partial class MainForm : Form
             case 4: BuildNetwork(); break;
             case 5: BuildPeripherals(); break;
             case 6: BuildAutomation(); break;
-            case 7: BuildVivobook(); break;
+            case 7: BuildVivobookHistory(); break;
+            case 10: BuildUpdates(); break;
+            case 11: BuildTools(); break;
             case 8:
                 resultsGrid = Grid(); RefreshResults(); var export = Actions(); Button(export, "Salvar HTML + JSON", Export); Button(export, "Atualizar lista", RefreshResults);
                 Heading("Resultados e relatório", "Os resultados ficam nesta sessão até você salvar. O relatório inclui identificação do PC e endereços da rede local; não é enviado a um servidor."); break;
@@ -135,7 +138,7 @@ public sealed partial class MainForm : Form
     {
         if (task is not null) return;
         status.Text = "Consultando hardware e sistema…";
-        await Run("Inventário", async ct => { inventory = await Task.Run(Inventory.Collect, ct); return TestResult.Done("Inventário", ("Campos consultados", inventory.Count)); });
+        await Run("Inventário", async ct => { inventory = await Task.Run(Inventory.Collect, ct); device = await Task.Run(DeviceDetection.Read, ct); return TestResult.Done("Inventário", ("Campos consultados", inventory.Count)); });
         if (!closing) ShowPage(menu.SelectedIndex);
     }
     void RefreshProcesses() { if (processGrid is not null) { try { processGrid.DataSource = Inventory.Processes(); } catch (Exception e) { status.Text = "Processos: " + e.Message; } } }
@@ -150,5 +153,5 @@ public sealed partial class MainForm : Form
         try { File.WriteAllText(Path.Combine(dialog.SelectedPath, prefix + ".html"), Reports.Html(data), new UTF8Encoding(false)); File.WriteAllText(Path.Combine(dialog.SelectedPath, prefix + ".json"), Reports.Json(data), new UTF8Encoding(false)); status.Text = "HTML + JSON salvos em " + dialog.SelectedPath; }
         catch (Exception e) { MessageBox.Show(this, "Não foi possível salvar: " + e.Message, Brand.Name); }
     }
-    public void VerifyUi(List<InfoRow> snapshot) { inventory = snapshot; if (menu.Items.Count != 10) throw new Exception("Páginas ausentes"); if (task is not null) throw new Exception("Carga automática indevida"); for (int i = 0; i < pages.Length; i++) menu.SelectedIndex = i; menu.SelectedIndex = 0; }
+    public void VerifyUi(List<InfoRow> snapshot) { inventory = snapshot; if (menu.Items.Count != 12) throw new Exception("Páginas ausentes"); if (task is not null) throw new Exception("Carga automática indevida"); for (int i = 0; i < pages.Length; i++) menu.SelectedIndex = i; menu.SelectedIndex = 0; }
 }

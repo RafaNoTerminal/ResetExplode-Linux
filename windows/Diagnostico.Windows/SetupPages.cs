@@ -40,6 +40,16 @@ public sealed partial class MainForm
         content.Controls.Add(selected); content.Controls.Add(description);
         var actions = Actions();
         SetupAction[] Current() => AutomationCatalog.Select(selected.CheckedItems.Cast<SetupAction>().Select(a => a.Id));
+        if (!notebook) {
+            var presets = Actions();
+            Button(presets, "Detectar e sugerir seleção", () => _ = Run("Detectar equipamento", async ct => {
+                device = await Task.Run(DeviceDetection.Read, ct);
+                var ids = device.Suggested(Environment.OSVersion.Version.Build < 22000).ToHashSet();
+                for (int n = 0; n < selected.Items.Count; n++) selected.SetItemChecked(n, ids.Contains(((SetupAction)selected.Items[n]).Id));
+                description.Text = device.Kind + " · " + device.Manufacturer + " " + device.Model + "\r\n" + device.Evidence + "\r\nSugestão marcada. Confira a prévia antes de aplicar. Bateria e tampa preservadas; USB/PCIe permanecem opcionais.";
+                return TestResult.Done("Detecção e sugestão", ("Equipamento", device), ("Mudanças aplicadas", "Nenhuma; seleção pronta para revisão"));
+            }), true);
+        }
         Button(actions, "Ver prévia", () => _ = ReviewSetup(Current, false), true);
         Button(actions, "Revisar e aplicar", () => _ = ReviewSetup(Current, true), true);
         Button(actions, "Restaurar backup", RestoreSetup, true);
@@ -105,21 +115,6 @@ public sealed partial class MainForm
         if (MessageBox.Show(this, "Restaurar os valores anteriores de registro e energia deste backup?\nApps removidos não são reinstalados.\n\n" + dialog.FileName, Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
         string file = dialog.FileName;
         _ = Run("Restaurar ajustes", async ct => { ct.ThrowIfCancellationRequested(); stop.Enabled = false; return await Automation.Restore(file); });
-    }
-    void BuildVivobook()
-    {
-        var grid = Grid(); grid.DataSource = vivobook.ToList();
-        var actions = Actions();
-        Button(actions, "Analisar vídeo / USB", () => _ = Run("Diagnóstico Vivobook", async ct => { vivobook = await Task.Run(Vivobook.Collect, ct); if (!grid.IsDisposed) grid.DataSource = vivobook.ToList(); return TestResult.Done("Diagnóstico Vivobook / ASUS", ("Dados e checklist", vivobook.ToArray())); }), true);
-        Button(actions, "Ajustes de teste", () => { foreach (Control c in content.Controls.Cast<Control>().ToArray()) c.Dispose(); content.Controls.Clear(); runButtons.Clear(); BuildAutomation(notebook: true); });
-        Button(actions, "Suporte ASUS", () => OpenLink("https://www.asus.com/support/download-center/"));
-        var shortcuts = Actions();
-        Button(shortcuts, "Dispositivos", () => OpenSystemTool("mmc.exe", "devmgmt.msc"));
-        Button(shortcuts, "Configurar telas", () => OpenLink("ms-settings:display"));
-        Button(shortcuts, "Windows Update", () => OpenLink("ms-settings:windowsupdate"));
-        Button(shortcuts, "MyASUS · diagnóstico", () => OpenLink("https://www.asus.com/global/support/faq/1045716/"));
-        var checklist = new Label { Dock = DockStyle.Top, Height = 100, Text = "Monitor piscando ou sumindo: 1) testar cabo/HDMI direta; 2) conferir modelo e driver ASUS; 3) comparar tela interna/externa; 4) testar tampa e bloqueio/desbloqueio. Ajustes USB/PCIe são opcionais, temporários e só na tomada. Eventos ajudam a investigar, não comprovam a causa.", ForeColor = Color.Silver }; content.Controls.Add(checklist);
-        Heading("Vivobook / ASUS", "Reúne modelo/BIOS, driver de vídeo/rede/USB, telas detectadas e até 50 eventos das últimas 72 horas. Funciona como coleta geral em outros PCs também.");
     }
     void OpenLink(string target) { try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); } catch (Exception e) { MessageBox.Show(this, e.Message, Brand.Name); } }
     void OpenSystemTool(string executable, string argument) { try { var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, executable)) { UseShellExecute = true }; start.ArgumentList.Add(argument); Process.Start(start); } catch (Exception e) { MessageBox.Show(this, e.Message, Brand.Name); } }
