@@ -46,7 +46,7 @@ internal static class MaintenanceSmoke
               }
             }
             """;
-        ProcessOutcome Execute(string script) => Task.Run(() => Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], CancellationToken.None)).GetAwaiter().GetResult();
+        ProcessOutcome Execute(string script) => Task.Run(() => MainForm.UpdateProcess(script, CancellationToken.None)).GetAwaiter().GetResult();
         var scan = Execute(mock + "\n" + WindowsUpdateScript.Build());
         if (scan.ExitCode != 0 || JsonSerializer.Deserialize<UpdateChoice[]>(scan.Output)?.Length != 2) throw new Exception("Windows Update fixture busca: " + scan.Error + scan.Output);
         var install = Execute(mock + "\n" + WindowsUpdateScript.Build(choices));

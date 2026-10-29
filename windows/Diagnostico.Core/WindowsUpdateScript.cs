@@ -11,7 +11,7 @@ public static class WindowsUpdateScript
     public static string Build(UpdateChoice[]? install = null)
     {
         if (install is not null && (install.Length == 0 || install.Any(u => !Guid.TryParseExact(u.Id, "D", out _) || u.Revision < 0))) throw new ArgumentException("Seleção de atualização inválida.");
-        string selection = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(install ?? [])));
+        string selection = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize((install ?? []).Select(u => new { u.Id, u.Revision, u.Title }))));
         return "$apply=$" + (install is not null ? "true" : "false") + ";$wanted=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + selection + "'))|ConvertFrom-Json)\n" + Body;
     }
     public const string Body = """

@@ -6,9 +6,16 @@ namespace Diagnostico.Windows;
 public sealed partial class MainForm
 {
     List<UpdateChoice> updates = [];
-    static Task<ProcessOutcome> UpdateProcess(string script, CancellationToken ct) => Automation.CaptureProcess(
-        Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
-        ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], ct);
+    internal static async Task<ProcessOutcome> UpdateProcess(string script, CancellationToken ct)
+    {
+        // A file avoids Windows' command-line limit when installing many selected updates.
+        string file = Path.Combine(Path.GetTempPath(), "rbt-maintenance-" + Guid.NewGuid().ToString("N") + ".ps1");
+        try {
+            await File.WriteAllTextAsync(file, script, new UTF8Encoding(true), ct);
+            return await Automation.CaptureProcess(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+                ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file], ct);
+        } finally { if (File.Exists(file)) File.Delete(file); }
+    }
     void BuildUpdates()
     {
         var list = new CheckedListBox { Dock = DockStyle.Fill, BackColor = Surface, ForeColor = Ink, CheckOnClick = true, IntegralHeight = false, HorizontalScrollbar = true };
