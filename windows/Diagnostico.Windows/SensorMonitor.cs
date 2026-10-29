@@ -13,8 +13,9 @@ internal sealed class SensorMonitor : IDisposable
     {
         lock (gate) {
             if (start && !Active) {
-                var info = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardInputEncoding = new UTF8Encoding(false) };
-                if (Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) info.ArgumentList.Add(typeof(Program).Assembly.Location);
+                string executable = Environment.ProcessPath ?? throw new IOException("Executável do RBT não identificado.");
+                var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardInputEncoding = new UTF8Encoding(false) };
+                if (Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) info.ArgumentList.Add(typeof(Program).Assembly.Location);
                 info.ArgumentList.Add(fixture ? "--sensor-worker-fixture" : "--sensor-worker");
                 worker = Process.Start(info) ?? throw new IOException("Não foi possível iniciar o leitor de sensores.");
             }
