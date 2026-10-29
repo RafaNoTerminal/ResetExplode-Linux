@@ -53,7 +53,16 @@ public sealed partial class MainForm
         Button(extra, "Restaurar frequência", () => ConfigureDisplay(restore: true));
         Button(extra, "Ajustes individuais", () => { if (task is not null) return; foreach (Control c in content.Controls.Cast<Control>().ToArray()) c.Dispose(); content.Controls.Clear(); runButtons.Clear(); BuildAutomation(notebook: true); });
         var support = Actions(); Button(support, "Drivers ASUS / modelo", () => OpenLink("https://www.asus.com/support/download-center/"));
-        Button(support, "MyASUS instalado", () => OpenLink("myasus:")); Button(support, "Gerenciador de Dispositivos", () => OpenSystemTool("mmc.exe", "devmgmt.msc"));
+        Button(support, "MyASUS instalado", () => _ = Run("Localizar MyASUS", async ct => {
+            string script = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$ErrorActionPreference='Stop';$apps=@(Get-StartApps | Where-Object {$_.Name -like '*MyASUS*'} | Select-Object Name,AppID);ConvertTo-Json -InputObject $apps -Compress";
+            var outcome = await UpdateProcess(script, ct); if (outcome.ExitCode != 0) throw new IOException(outcome.Error);
+            using var apps = System.Text.Json.JsonDocument.Parse(outcome.Output);
+            if (apps.RootElement.GetArrayLength() != 1) throw new IOException("MyASUS não encontrado de forma única. Confira a instalação e o ASUS System Control Interface do modelo no suporte ASUS.");
+            string id = apps.RootElement[0].GetProperty("AppID").GetString()!;
+            var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")) { UseShellExecute = true };
+            start.ArgumentList.Add("shell:AppsFolder\\" + id); System.Diagnostics.Process.Start(start);
+            return new TestResult("MyASUS", "Abertura solicitada; ajustes manuais pendentes", new() { ["Observação"] = "Conferir economia de energia, Tru2Life e Splendid compatíveis com o modelo. O RBT não alterou essas opções." }, DateTimeOffset.Now);
+        }), true); Button(support, "Gerenciador de Dispositivos", () => OpenSystemTool("mmc.exe", "devmgmt.msc"));
         var note = new Label { Dock = DockStyle.Top, Height = 82, ForeColor = Color.Silver, Text = "Caso do nosso histórico: monitor externo piscando / sumindo. Aplicar uma etapa, retestar e restaurar se não ajudar. USB seletivo e PCIe: somente tomada; hubs USB: também bateria. MyASUS/Tru2Life/Splendid exigem conferência manual por modelo. 60 Hz é teste adicional, não a correção principal do histórico." }; content.Controls.Add(note);
         Heading("Vivobook · monitor externo", "Baseado no checklist já utilizado: driver AMD, economia USB/PCIe, atualizações de driver e reteste de tampa/bloqueio/uso prolongado. Primeiro confira o modelo e o driver detectados. 25H2 identifica Windows, não uma versão específica de driver.");
     }
