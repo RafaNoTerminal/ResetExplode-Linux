@@ -55,6 +55,7 @@ public sealed partial class MainForm : Form
         var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, RowHeadersVisible = false, BackgroundColor = Background, BorderStyle = BorderStyle.None, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, EnableHeadersVisualStyles = false };
         grid.DefaultCellStyle = new DataGridViewCellStyle { BackColor = Surface, ForeColor = Ink, SelectionBackColor = Color.FromArgb(48, 83, 91), SelectionForeColor = Ink, Padding = new Padding(6), WrapMode = DataGridViewTriState.True };
         grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.FromArgb(43, 52, 64), ForeColor = Ink, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(6) };
+        grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing; grid.ColumnHeadersHeight = 44;
         grid.GridColor = Color.FromArgb(57, 65, 77); content.Controls.Add(grid); return grid;
     }
     void ShowPage(int index)
@@ -147,5 +148,5 @@ public sealed partial class MainForm : Form
         try { File.WriteAllText(Path.Combine(dialog.SelectedPath, prefix + ".html"), Reports.Html(data), new UTF8Encoding(false)); File.WriteAllText(Path.Combine(dialog.SelectedPath, prefix + ".json"), Reports.Json(data), new UTF8Encoding(false)); status.Text = "HTML + JSON salvos em " + dialog.SelectedPath; }
         catch (Exception e) { MessageBox.Show(this, "Não foi possível salvar: " + e.Message, Brand.Name); }
     }
-    public void VerifyUi() { if (menu.Items.Count != 10) throw new Exception("Páginas ausentes"); if (task is not null) throw new Exception("Carga automática indevida"); for (int i = 0; i < pages.Length; i++) menu.SelectedIndex = i; menu.SelectedIndex = 0; }
+    public void VerifyUi(List<InfoRow> snapshot) { inventory = snapshot; if (menu.Items.Count != 10) throw new Exception("Páginas ausentes"); if (task is not null) throw new Exception("Carga automática indevida"); for (int i = 0; i < pages.Length; i++) menu.SelectedIndex = i; menu.SelectedIndex = 0; }
 }
