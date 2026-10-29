@@ -42,11 +42,25 @@ jobs:
           Copy-Item THIRD_PARTY.md windows/artifacts/windows-x64/THIRD_PARTY.md
           $components = New-Item -ItemType Directory -Force windows/artifacts/windows-x64/Componentes
           Copy-Item windows/ThirdParty/MAS -Destination $components.FullName -Recurse
+          Copy-Item windows/ThirdParty/LibreHardwareMonitor -Destination $components.FullName -Recurse
           $licenses = New-Item -ItemType Directory -Force windows/artifacts/windows-x64/Licencas-dotnet
           foreach ($package in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64','system.management','system.codedom')) {
             if (-not (Test-Path "$env:USERPROFILE/.nuget/packages/$package")) { continue }
             $version = Get-ChildItem "$env:USERPROFILE/.nuget/packages/$package" -Directory | Sort-Object { [version]$_.Name } | Select-Object -Last 1
             Get-ChildItem $version.FullName -File | Where-Object { $_.Name -match '^(LICENSE|THIRD-PARTY-NOTICES)' } | ForEach-Object { Copy-Item $_.FullName (Join-Path $licenses.FullName "$package-$($_.Name)") }
+          }
+          $allLicenses = New-Item -ItemType Directory -Force windows/artifacts/windows-x64/Licencas-NuGet
+          $assets = Get-Content windows/Diagnostico.Windows/obj/project.assets.json -Raw | ConvertFrom-Json -AsHashtable
+          foreach ($entry in $assets.libraries.GetEnumerator()) {
+            if ($entry.Value.type -ne 'package') { continue }
+            $packageDir = Join-Path "$env:USERPROFILE/.nuget/packages" $entry.Value.path
+            $target = New-Item -ItemType Directory -Force (Join-Path $allLicenses.FullName ($entry.Key -replace '/', '-'))
+            Get-ChildItem $packageDir -File -Recurse | Where-Object { $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE|THIRD.PARTY)' -or $_.Extension -eq '.nuspec' } | ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath($packageDir, $_.FullName)
+              $output = Join-Path $target.FullName $relative
+              New-Item -ItemType Directory -Force (Split-Path $output) | Out-Null
+              Copy-Item $_.FullName $output
+            }
           }
           Get-FileHash windows/artifacts/windows-x64/RBT-Diagnostico.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  RBT-Diagnostico.exe" } | Set-Content windows/artifacts/windows-x64/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4

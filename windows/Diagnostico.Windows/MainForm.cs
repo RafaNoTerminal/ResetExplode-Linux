@@ -20,7 +20,7 @@ public sealed partial class MainForm : Form
     Label? metrics;
     readonly System.Windows.Forms.Timer timer = new() { Interval = 4000 };
     readonly bool automaticQueries;
-    readonly string[] pages = ["Visão geral", "Hardware e sistema", "Processos e memória", "Testes de desempenho", "Rede e internet", "Tela e periféricos", "Ajustes do Windows", "Vivobook / ASUS", "Resultados e relatório", "Sobre", "Atualizações", "Ferramentas / ativação"];
+    readonly string[] pages = ["Visão geral", "Hardware e sistema", "Processos e memória", "Testes de desempenho", "Rede e internet", "Tela e periféricos", "Ajustes do Windows", "Vivobook / ASUS", "Resultados e relatório", "Sobre", "Atualizações", "Ferramentas / ativação", "Sensores", "Impressoras / empresa", "Manutenção Windows", "Central Helpdesk"];
 
     public MainForm(bool collectOnShow = true)
     {
@@ -40,7 +40,7 @@ public sealed partial class MainForm : Form
         timer.Tick += (_, _) => { UpdateMemory(); if (menu.SelectedIndex == 2 && task is null) RefreshProcesses(); };
         Shown += async (_, _) => { timer.Start(); if (collectOnShow) await LoadInventory(); };
         FormClosing += (_, e) => { if (task is not null) { e.Cancel = true; closing = true; task.Cancel(); status.Text = "Encerrando o teste antes de fechar…"; } };
-        FormClosed += (_, _) => timer.Dispose();
+        FormClosed += (_, _) => { timer.Dispose(); sensorTimer.Dispose(); sensorMonitor.Dispose(); };
         menu.SelectedIndex = 0;
     }
     Label Heading(string title, string description) {
@@ -85,6 +85,10 @@ public sealed partial class MainForm : Form
             case 7: BuildVivobookHistory(); break;
             case 10: BuildUpdates(); break;
             case 11: BuildTools(); break;
+            case 12: BuildSensors(); break;
+            case 13: BuildCompanyPrinters(); break;
+            case 14: BuildMaintenance(); break;
+            case 15: BuildHelpdesk(); break;
             case 8:
                 resultsGrid = Grid(); RefreshResults(); var export = Actions(); Button(export, "Salvar HTML + JSON", Export); Button(export, "Atualizar lista", RefreshResults);
                 Heading("Resultados e relatório", "Os resultados ficam nesta sessão até você salvar. O relatório inclui identificação do PC e endereços da rede local; não é enviado a um servidor."); break;
@@ -109,9 +113,12 @@ public sealed partial class MainForm : Form
     void BuildNetwork()
     {
         resultsGrid = Grid(); RefreshResults();
-        var speed = Actions(); Button(speed, "Medir velocidade da internet", () => ConfirmRun("Internet", "Download e upload com até 8 conexões, cerca de 8 segundos por fase. Pode consumir até 2 GiB + seleção de servidor. Continuar?", ct => SpeedTest.Run(new Progress<SpeedProgress>(p => status.Text = p.Stage + (p.Mbps > 0 ? " · " + p.Mbps.ToString("N2") + " Mbps" : "")), ct)), true);
+        var speed = Actions(); Button(speed, "Medir velocidade da internet", () => ConfirmRun("Internet", "Download e upload com até 8 conexões, cerca de 8 segundos por fase. Pode consumir até 2 GiB + seleção de servidor. Continuar?", ct => NetworkDiagnostics.WithTimeout(token => SpeedTest.Run(new Progress<SpeedProgress>(p => status.Text = p.Stage + (p.Mbps > 0 ? " · " + p.Mbps.ToString("N2") + " Mbps" : "")), token), TimeSpan.FromSeconds(90), ct)), true);
         var ping = Actions(); var host = new TextBox { Text = "1.1.1.1", Width = 220, BackColor = Surface, ForeColor = Ink, Margin = new Padding(0, 4, 12, 0) }; ping.Controls.Add(host);
-        Button(ping, "Testar DNS e ping", () => _ = Run("DNS e ping", ct => NetworkDiagnostics.PingHost(host.Text, ct), cancellableTest: true), true);
+        Button(ping, "Testar DNS e ping", () => _ = Run("DNS e ping", ct => NetworkDiagnostics.WithTimeout(token => NetworkDiagnostics.PingHost(host.Text, token), TimeSpan.FromSeconds(45), ct), cancellableTest: true), true);
+        var connectivity = Actions();
+        Button(connectivity, "Testar acesso HTTPS", () => _ = Run("Conectividade HTTPS", ct => NetworkDiagnostics.WithTimeout(NetworkDiagnostics.Internet, TimeSpan.FromSeconds(15), ct), cancellableTest: true), true);
+        Button(connectivity, "Testar TCP443 do destino", () => _ = Run("Conexão TCP", ct => NetworkDiagnostics.Tcp(host.Text, 443, ct), cancellableTest: true), true);
         Heading("Rede e internet", "Ping/DNS para um destino e medição nativa de velocidade. Firewall ou servidor podem limitar respostas e taxas. Inventário não é transmitido.");
     }
     void BuildPeripherals()
@@ -153,5 +160,5 @@ public sealed partial class MainForm : Form
         try { File.WriteAllText(Path.Combine(dialog.SelectedPath, prefix + ".html"), Reports.Html(data), new UTF8Encoding(false)); File.WriteAllText(Path.Combine(dialog.SelectedPath, prefix + ".json"), Reports.Json(data), new UTF8Encoding(false)); status.Text = "HTML + JSON salvos em " + dialog.SelectedPath; }
         catch (Exception e) { MessageBox.Show(this, "Não foi possível salvar: " + e.Message, Brand.Name); }
     }
-    public void VerifyUi(List<InfoRow> snapshot) { inventory = snapshot; if (menu.Items.Count != 12) throw new Exception("Páginas ausentes"); if (task is not null) throw new Exception("Carga automática indevida"); for (int i = 0; i < pages.Length; i++) menu.SelectedIndex = i; menu.SelectedIndex = 0; }
+    public void VerifyUi(List<InfoRow> snapshot) { inventory = snapshot; if (menu.Items.Count != 16) throw new Exception("Páginas ausentes"); if (task is not null) throw new Exception("Carga automática indevida"); for (int i = 0; i < pages.Length; i++) menu.SelectedIndex = i; menu.SelectedIndex = 0; }
 }

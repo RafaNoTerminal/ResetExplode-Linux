@@ -19,3 +19,7 @@ windows/TestResults/
 smoke-result.txt
 diagnostico-*.html
 diagnostico-*.json
+
+# Perfil privado e inventários internos da empresa ficam fora do repositório público.
+rbt-empresa.json
+**/Empresa/

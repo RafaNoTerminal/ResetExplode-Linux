@@ -12,9 +12,9 @@ public static class SpeedTest
 {
     const long Mib = 1048576;
     public static HttpClient Client() {
-        var handler = new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.None, ConnectTimeout = TimeSpan.FromSeconds(4), MaxConnectionsPerServer = 16 };
+        var handler = new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.None, DefaultProxyCredentials = System.Net.CredentialCache.DefaultNetworkCredentials, ConnectTimeout = TimeSpan.FromSeconds(4), MaxConnectionsPerServer = 16 };
         var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(12) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("RBT-Diagnostico/0.2.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("RBT-Diagnostico/" + Brand.Version);
         client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "identity");
         client.DefaultRequestHeaders.CacheControl = new() { NoCache = true };
         return client;
@@ -34,7 +34,12 @@ public static class SpeedTest
         if (offset > 1024) throw new IOException("Resposta do servidor excedeu o limite.");
         return System.Text.Encoding.UTF8.GetString(data, 0, offset);
     }
-    public static async Task<SpeedServer> Discover(CancellationToken ct, Func<HttpClient>? createClient = null) {
+    public static async Task<SpeedServer> Discover(CancellationToken ct, Func<HttpClient>? createClient = null)
+    {
+        try { return await NetworkDiagnostics.WithTimeout(token => DiscoverCore(token, createClient), TimeSpan.FromSeconds(35), ct); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new IOException("Tempo esgotado ao consultar servidores de medição. Confira proxy e DNS."); }
+    }
+    static async Task<SpeedServer> DiscoverCore(CancellationToken ct, Func<HttpClient>? createClient = null) {
         createClient ??= Client;
         using var directory = createClient();
         using var response = await directory.GetAsync("https://www.speedtest.net/api/js/servers?engine=js&limit=12&https_functional=true", HttpCompletionOption.ResponseHeadersRead, ct);
@@ -72,7 +77,7 @@ public static class SpeedTest
         server ??= await Discover(ct, createClient);
         if (!ValidEndpoint(server.Download) || !ValidEndpoint(server.Upload) || !ValidEndpoint(server.Latency) || server.Size < 65536 || server.Size > 64 * Mib) throw new ArgumentException("Servidor requer HTTPS válido e tamanho de download confirmado.");
         using var client = createClient();
-        await Latency(client, server.Latency, ct);
+        await NetworkDiagnostics.WithTimeout(token => Latency(client, server.Latency, token), TimeSpan.FromSeconds(8), ct);
         var latencies = new List<double>();
         for (int i = 0; i < 5; i++) latencies.Add(await Latency(client, server.Latency, ct));
         var download = await Transfer(server, false, progress, ct, seconds, budget, connections, createClient);

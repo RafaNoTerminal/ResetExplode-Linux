@@ -44,7 +44,7 @@ public static class Inventory
             } catch (NetworkInformationException) { Add("Rede", n.Name + " · IP", "Indisponível"); }
         }
         Query(rows, "Dispositivos com erro", "Win32_PnPEntity", new() { ["Name"] = "Dispositivo", ["ConfigManagerErrorCode"] = "Código do erro" }, "ConfigManagerErrorCode <> 0");
-        Add("Limites", "Temperaturas / SMART detalhado", "Não consultados por este aplicativo. Estado WMI não substitui SMART nem inspeção física.");
+        Add("Limites", "Temperaturas / SMART detalhado", "Sensores disponíveis na aba Sensores; saúde de discos na Manutenção. SMART bruto/diagnóstico do fabricante não são substituídos por estado WMI ou amostras de sensores.");
         return rows;
     }
 

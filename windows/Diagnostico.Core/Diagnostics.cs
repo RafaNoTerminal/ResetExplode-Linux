@@ -10,7 +10,7 @@ namespace Diagnostico;
 public static class Brand
 {
     public const string Name = "RBT Diagnóstico";
-    public const string Version = "0.3.1";
+    public const string Version = "0.4.0";
 }
 
 public record TestResult(string Teste, string Estado, Dictionary<string, object?> Dados, DateTimeOffset Data)
@@ -102,13 +102,17 @@ public static class NetworkDiagnostics
     {
         string host = ValidateHost(input); var samples = new List<double>(); int lost = 0;
         if (count is < 1 or > 20) throw new ArgumentOutOfRangeException(nameof(count));
-        var addresses = await Dns.GetHostAddressesAsync(host, ct);
+        using var dnsTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct); dnsTimeout.CancelAfter(TimeSpan.FromSeconds(5));
+        IPAddress[] addresses;
+        try { addresses = IPAddress.TryParse(host, out var literal) ? [literal] : await Dns.GetHostAddressesAsync(host, dnsTimeout.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new IOException("DNS não respondeu em 5 segundos. Confira DNS, VPN e conexão da empresa."); }
+        addresses = addresses.OrderBy(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 0 : 1).ToArray();
         if (addresses.Length == 0) throw new IOException("O nome não foi resolvido.");
         using var ping = new Ping();
         for (int i = 0; i < count; i++) {
             ct.ThrowIfCancellationRequested();
             try {
-                var r = await ping.SendPingAsync(addresses[0], TimeSpan.FromSeconds(2), new byte[32], cancellationToken: ct);
+                var r = await ping.SendPingAsync(addresses[0], TimeSpan.FromSeconds(2), cancellationToken: ct);
                 if (r.Status == IPStatus.Success) samples.Add(r.RoundtripTime); else lost++;
             } catch (PingException) { lost++; }
             if (i + 1 < count) await Task.Delay(200, ct);
@@ -119,6 +123,31 @@ public static class NetworkDiagnostics
             ("Variação média entre respostas (ms)", samples.Count > 1 ? Math.Round(samples.Skip(1).Zip(samples, (a, b) => Math.Abs(a - b)).Average(), 2) : null),
             ("Observação", "Ausência de resposta também pode ser bloqueio de ICMP no destino ou na rede."));
     }
+    public static async Task<T> WithTimeout<T>(Func<CancellationToken, Task<T>> operation, TimeSpan timeout, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(timeout);
+        try { return await operation(deadline.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new IOException("O diagnóstico atingiu o limite de tempo. Confira DNS, proxy, firewall e acesso ao destino. Isso não foi cancelamento pelo usuário."); }
+    }
+    public static async Task<TestResult> Tcp(string input, int port, CancellationToken ct)
+    {
+        string host = ValidateHost(input); if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
+        var watch = Stopwatch.StartNew(); using var client = new System.Net.Sockets.TcpClient();
+        try {
+            await WithTimeout(async token => { await client.ConnectAsync(host, port, token); return true; }, TimeSpan.FromSeconds(5), ct);
+            return TestResult.Done("Conexão TCP", ("Destino", host), ("Porta", port), ("Conectou", true), ("Tempo ms", watch.ElapsedMilliseconds), ("Limite", "Porta acessível não comprova login, permissão ou funcionamento da aplicação/impressora."));
+        } catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException) {
+            return new("Conexão TCP", "Não conectou", new() { ["Destino"] = host, ["Porta"] = port, ["Erro"] = e.Message }, DateTimeOffset.Now);
+        }
+    }
+    public static async Task<TestResult> Internet(CancellationToken ct)
+    {
+        using var client = SpeedTest.Client(); var watch = Stopwatch.StartNew();
+        using var request = new HttpRequestMessage(HttpMethod.Head, "https://www.microsoft.com/");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        return TestResult.Done("Conectividade HTTPS", ("Destino", "https://www.microsoft.com/"), ("HTTP", (int)response.StatusCode), ("Tempo ms", watch.ElapsedMilliseconds), ("Observação", response.IsSuccessStatusCode ? "Servidor HTTPS respondeu. Não é medição de velocidade." : "Servidor/proxy respondeu; código HTTP pode indicar bloqueio ou restrição. Não é aprovação de acesso a todos os serviços."));
+    }
+
 }
 
 public static class Reports

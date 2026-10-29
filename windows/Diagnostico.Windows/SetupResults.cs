@@ -90,6 +90,18 @@ public sealed partial class MainForm
         menu.SelectedIndex = 11; Application.DoEvents(); Capture(this, "-ferramentas");
         Check(content.Controls.OfType<FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<Button>()).Any(b => b.Text == "Ativar Windows") && content.Controls.OfType<TextBox>().Any(), "Ativação integrada ou log na interface ausente.");
         Check(task is null, "Ferramenta externa foi iniciada automaticamente.");
+        menu.SelectedIndex = 4; Application.DoEvents();
+        content.Controls.OfType<FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<TextBox>()).Single().Text = "127.0.0.1";
+        content.Controls.OfType<FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<Button>()).Single(b => b.Text == "Testar DNS e ping").PerformClick();
+        var pingWatch = System.Diagnostics.Stopwatch.StartNew();
+        while (task is not null && pingWatch.ElapsedMilliseconds < 10000) { Application.DoEvents(); Thread.Sleep(5); }
+        Check(task is null && results.Any(r => r.Teste == "Rede · DNS e ping" && Convert.ToInt32(r.Dados["Respostas"]) > 0), "Botão de ping da interface não executou/concluiu o teste real local.");
+        Capture(this, "-rede-ping");
+        menu.SelectedIndex = 12; Application.DoEvents(); Capture(this, "-sensores");
+        Check(!sensorMonitor.Active, "Leitura/driver de sensores iniciou sem solicitação.");
+        menu.SelectedIndex = 13; Application.DoEvents(); Capture(this, "-impressoras");
+        menu.SelectedIndex = 14; Application.DoEvents(); Capture(this, "-manutencao");
+        menu.SelectedIndex = 15; Application.DoEvents(); Capture(this, "-helpdesk");
         appInventory = savedInventory; oneDrivePlan = savedDrivePlan; menu.SelectedIndex = 0;
         results.Clear(); status.Text = "Pronto · os testes começam somente pelos botões."; Check(task is null && !stop.Visible, "Teste de UI deixou tarefa ou botão ativo.");
     }

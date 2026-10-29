@@ -1,0 +1,9 @@
+{
+  "Root": "\\\\servidor\\compartilhamento\\Helpdesk",
+  "PrintServer": "",
+  "Printers": [],
+  "Tools": [
+    {"Title": "Instalador aprovado", "Category": "Suporte", "RelativePath": "Instaladores/ferramenta.exe", "Kind": "Installer"},
+    {"Title": "Driver do modelo", "Category": "Drivers", "RelativePath": "DRIVERS/Modelo", "Kind": "DriverFolder"}
+  ]
+}

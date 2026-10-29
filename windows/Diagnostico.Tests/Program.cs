@@ -84,6 +84,17 @@ activation = await ActivationFlow.Execute([ActivationMethod.OfficeOhook], () => 
 Check(OperationResults.Read(activation).Single().Estado == "Informado pelo motor" && activation.Estado.Contains("pendente"), "Ohook foi confundido com licença WMI confirmada");
 activation = await ActivationFlow.Execute([ActivationMethod.OfficeOhook], () => Task.FromResult(unlicensed), _ => Task.FromResult(new ActivationRun(0, "Some errors were detected.", "")));
 Check(OperationResults.Read(activation).Single().Failed, "Falha Office retornando zero foi ignorada");
+var profile = new CompanyProfile(@"\\server.example\share\Helpdesk", [new("TEST", "Printer fixture", "192.0.2.20")], [new("Test", "Tools", "Tools/test.exe", CompanyToolKind.Installer)]);
+profile.Validate(); Check(profile.Resolve("Tools/test.exe").EndsWith(@"Helpdesk\Tools\test.exe") && profile.Share == @"\\server.example\share", "Perfil de empresa perdeu raiz de compartilhamento");
+foreach (string invalid in new[] { "../secret", @"..\secret", @"C:\test.exe", @"\\other\share\tool.exe", "tools/../evil.exe" }) await Reject<ArgumentException>(() => Task.Run(() => CompanyProfile.ValidateRelative(invalid)));
+await Reject<ArgumentException>(() => Task.Run(() => CompanyProfile.RootParts("https://example.com")));
+string printerInstall = PrinterScripts.Install(profile.Printers, "Fixture driver");
+Check(!printerInstall.Contains("Remove-Printer") && printerInstall.Contains("$default.Count -eq 1") && printerInstall.Contains("Já existe"), "Instalação destrói filas, portas ou padrão");
+Check(PrinterScripts.MigrateRicoh("fixture.json").Contains("RICOH SP 377SFNwX PCL 6") && !PrinterScripts.MigrateRicoh("fixture.json").Contains("Remove-Printer"), "Migração Ricoh perdeu o escopo/preservação");
+await Reject<ArgumentException>(() => Task.Run(() => PrinterScripts.Install([], "Fixture driver")));
+Check(MaintenanceCatalog.All.All(a => a.File is "sfc.exe" or "dism.exe" or "ipconfig.exe") && !MaintenanceCatalog.All.SelectMany(a => a.Arguments).Contains("/ResetBase"), "Manutenção usa comando fora do catálogo ou limpeza irrestrita");
+await Reject<IOException>(() => NetworkDiagnostics.WithTimeout(async ct => { await Task.Delay(1000, ct); return true; }, TimeSpan.FromMilliseconds(5), CancellationToken.None));
+using(var cancelled = new CancellationTokenSource()){cancelled.Cancel();await Reject<OperationCanceledException>(()=>NetworkDiagnostics.WithTimeout(async ct=>{await Task.Delay(100,ct);return true;},TimeSpan.FromSeconds(1),cancelled.Token));}
 const string installer = @"C:\Program Files\Microsoft OneDrive\26.0\OneDriveSetup.exe";
 var absentDrive = new OneDriveSnapshot([], [], []);
 var installedDrive = new OneDriveSnapshot([new('"' + installer + "\" /uninstall /allusers", "Computador · todos os usuários", "fixture")], [@"C:\Program Files\Microsoft OneDrive\OneDrive.exe"], []);
