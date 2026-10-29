@@ -36,7 +36,7 @@ internal static class OneDriveDetection
         }.Distinct(StringComparer.OrdinalIgnoreCase).Where(File.Exists).ToArray();
         return new(registrations.ToArray(), clients, errors.ToArray());
     }
-    static async Task<bool> MicrosoftSigned(string file)
+    internal static async Task<bool> MicrosoftSigned(string file)
     {
         string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(file));
         string script = "$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "'));$s=Get-AuthenticodeSignature -LiteralPath $p;[bool]($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match '(?i)(^|,)\\s*O=\"?Microsoft Corporation\"?(,|$)')|ConvertTo-Json -Compress";
