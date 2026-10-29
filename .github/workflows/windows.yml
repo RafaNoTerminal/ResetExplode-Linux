@@ -25,6 +25,7 @@ jobs:
       - name: Smoke test real Windows UI and WMI
         shell: pwsh
         run: |
+          Get-AuthenticodeSignature "$env:SystemRoot/System32/WindowsPowerShell/v1.0/powershell.exe" | Format-List Status,StatusMessage,SignerCertificate
           $exe = Resolve-Path windows/artifacts/windows-x64/RBT-Diagnostico.exe
           $image = Join-Path $env:RUNNER_TEMP 'windows-ui.png'
           $p = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', $image) -PassThru
