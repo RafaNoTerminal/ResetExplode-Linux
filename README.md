@@ -2,7 +2,7 @@
 
 Implementação comunitária para Linux, inspirada na organização e nas funcionalidades do [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode), de GustavoReset. **Não é uma distribuição oficial do projeto Windows.**
 
-Linux **0.2.0** · Windows **0.3.0**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
+Linux **0.2.0** · Windows **0.3.1**. A aplicação já é funcional; a migração integral das funcionalidades Windows ainda não está concluída. Consulte [COMPATIBILIDADE.md](COMPATIBILIDADE.md) antes de instalar ou anunciar paridade.
 
 ## Windows portátil para testes de TI
 

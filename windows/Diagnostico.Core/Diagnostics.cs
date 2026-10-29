@@ -10,7 +10,7 @@ namespace Diagnostico;
 public static class Brand
 {
     public const string Name = "RBT Diagnóstico";
-    public const string Version = "0.3.0";
+    public const string Version = "0.3.1";
 }
 
 public record TestResult(string Teste, string Estado, Dictionary<string, object?> Dados, DateTimeOffset Data)

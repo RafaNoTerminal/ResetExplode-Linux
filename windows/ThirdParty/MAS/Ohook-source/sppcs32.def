@@ -1,0 +1,4 @@
+LIBRARY sppcs.dll
+EXPORTS
+SLGetLicensingStatusInformation@24
+SLGetProductSkuInformation@24

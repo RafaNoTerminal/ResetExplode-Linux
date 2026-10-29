@@ -1,4 +1,4 @@
-# RBT Diagnóstico · Windows 0.3.0
+# RBT Diagnóstico · Windows 0.3.1
 
 Aplicativo portátil para testar PCs Windows 10 22H2 / Windows 11 de 64 bits (x64). Dê dois cliques em **RBT-Diagnostico.exe**. O runtime .NET está incluído: o PC não precisa instalar .NET, Python, GTK ou outro programa de speedtest. Ao abrir, o aplicativo solicita acesso de administrador pelo UAC do Windows, conforme o manifesto incorporado. Se a confirmação for cancelada, o aplicativo não abre. Políticas corporativas podem restringir executáveis não assinados; o aplicativo não altera essas políticas.
 
@@ -79,3 +79,14 @@ Implementação Windows própria em C#/.NET. A versão Linux nasceu da referênc
 - **Ferramentas / ativação** consulta licenciamento sem exibir chaves. Utilitário externo indicado pelo usuário é aberto em terminal administrador apenas com confirmação explícita; comando `irm https://get.activated.win | iex`. Não é executado em testes, inventário ou presets; o RBT registra somente o início do terminal e não declara ativação/licença confirmada. Requer internet e o código remoto pode mudar.
 
 Fontes: [Windows Update Agent](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/aa387102(v=vs.85)), [chassi SMBIOS](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-systemenclosure), [controle do novo Outlook](https://learn.microsoft.com/en-us/microsoft-365-apps/outlook/get-started/control-install), [MyASUS](https://rog.asus.com/us/support/faq/1045651/).
+
+
+### Ativação integrada 0.3.1
+
+A página **Ferramentas / ativação** agora executa pelo próprio RBT, sem abrir o menu externo do terminal. Botões: Analisar Windows/Office, Ativar Windows (HWID sem troca de edição), Ativar Office (Ohook), Windows+Office e Remover Ohook. O motor independente MAS3.12 é original de massgravel e colaboradores, GPL-3.0; não é criação da RBT. Código, origem e licenças MAS/Ohook acompanham o app em `Componentes/MAS` e no arquivo de fonte.
+
+O recurso incorporado tem SHA256 fixo e é conferido em memória e após extrair. Não executa o carregador remoto `irm | iex` nem atualiza o motor silenciosamente. Extração temporária restringe acesso a administradores eSYSTEM e é removida após a execução. O app não desliga antivírus/políticas para rodar o motor. A classificação de ativadores pelo antivírus pode impedir a operação; o erro deve permanecer visível, sem tentar contornar a proteção.
+
+Cada operação exige confirmação; não participa dos presets e o CI não executa ativação real. Salve documentos e feche todos os aplicativos Office antes. O motor altera licenciamento e, no Office, arquivos/registro. Remover Ohook não é restauração integral da licença anterior. Não encerra apps do usuário à força. Não interrompe transações ao fechar o RBT; aguarda a execução terminar.
+
+Andamento e mensagens ficam na própria página e nos relatórios da sessão, com chaves de produto ocultadas. Retornozero não é prova de ativação. Windows é consultado antes/depois pela família da edição atual eLicenseStatus; edição não pode mudar para ser considerado confirmado. Para Office/Ohook, o resultado é explicitamente **informado pelo motor**, com confirmação no Word/Excel pendente: não é confundido com uma licença WMI/Microsoft365 adquirida. A integração foi validada com um batch neutro de teste, nunca com o motor real em máquina da empresa/runnerCI.

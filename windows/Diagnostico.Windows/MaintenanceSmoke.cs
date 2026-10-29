@@ -4,9 +4,21 @@ namespace Diagnostico.Windows;
 
 internal static class MaintenanceSmoke
 {
+    sealed class DirectProgress(Action<string> onReport) : IProgress<string> { public void Report(string value) => onReport(value); }
     internal static void Verify()
     {
         _ = DeviceDetection.Read();
+        _ = ActivationService.EngineBytes(); // Hash only; never execute the real engine in CI.
+        _ = ActivationService.Read();
+        var directory = ActivationService.PrivateDirectory();
+        try {
+            // A harmless batch fixture exercises hidden process invocation and redaction.
+            File.WriteAllText(Path.Combine(directory.FullName, "MAS_AIO.cmd"), "@echo off\r\necho RBT fixture %*\r\necho ABCDE-FGHIJ-KLMNO-PQRST-UVWXY\r\nexit /b 7\r\n");
+            var lines = new List<string>();
+            var fixture = Task.Run(() => ActivationService.RunProcess(directory.FullName, ActivationMethod.WindowsHwid, new DirectProgress(lines.Add))).GetAwaiter().GetResult();
+            if (fixture.ExitCode != 7 || !fixture.Output.Contains("/HWID-NoEditionChange") || fixture.Output.Contains("ABCDE-") || !lines.Any(l => l.Contains("RBT fixture"))) throw new Exception("Invocação integrada de ativação perdeu argumentos, retorno, progresso ou ocultação de chave.");
+        } finally { directory.Delete(true); }
+
         if (!UsbHubPower.RootHub(@"USB\ROOT_HUB30\fixture_0") || UsbHubPower.RootHub(@"USB\VID_1234\keyboard") || UsbHubPower.RootHub(@"PCI\fixture")) throw new Exception("Filtro de hubs USB aceitou outro dispositivo.");
         foreach (var screen in Screen.AllScreens) {
             var current = DisplaySettings.Current(screen.DeviceName);

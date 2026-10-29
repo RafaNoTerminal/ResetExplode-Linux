@@ -1,0 +1,3 @@
+
+# Preserve audited upstream engine bytes and its SHA256 on every checkout.
+windows/ThirdParty/MAS/MAS_AIO.cmd -text

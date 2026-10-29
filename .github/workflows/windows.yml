@@ -40,6 +40,8 @@ jobs:
           Copy-Item LICENSE windows/artifacts/windows-x64/LICENSE
           Copy-Item LICENSE.upstream windows/artifacts/windows-x64/LICENSE.upstream
           Copy-Item THIRD_PARTY.md windows/artifacts/windows-x64/THIRD_PARTY.md
+          $components = New-Item -ItemType Directory -Force windows/artifacts/windows-x64/Componentes
+          Copy-Item windows/ThirdParty/MAS -Destination $components.FullName -Recurse
           $licenses = New-Item -ItemType Directory -Force windows/artifacts/windows-x64/Licencas-dotnet
           foreach ($package in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64','system.management','system.codedom')) {
             if (-not (Test-Path "$env:USERPROFILE/.nuget/packages/$package")) { continue }

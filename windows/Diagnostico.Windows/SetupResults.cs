@@ -88,6 +88,7 @@ public sealed partial class MainForm
         menu.SelectedIndex = 10; Application.DoEvents(); Capture(this, "-atualizacoes");
         Check(content.Controls.OfType<CheckedListBox>().Single().Items.Count == 0, "Atualizações iniciaram sem busca explícita.");
         menu.SelectedIndex = 11; Application.DoEvents(); Capture(this, "-ferramentas");
+        Check(content.Controls.OfType<FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<Button>()).Any(b => b.Text == "Ativar Windows") && content.Controls.OfType<TextBox>().Any(), "Ativação integrada ou log na interface ausente.");
         Check(task is null, "Ferramenta externa foi iniciada automaticamente.");
         appInventory = savedInventory; oneDrivePlan = savedDrivePlan; menu.SelectedIndex = 0;
         results.Clear(); status.Text = "Pronto · os testes começam somente pelos botões."; Check(task is null && !stop.Visible, "Teste de UI deixou tarefa ou botão ativo.");

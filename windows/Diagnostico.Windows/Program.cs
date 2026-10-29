@@ -31,7 +31,7 @@ static class Program
                 if (args.Length >= 2) {
                     using var image = new Bitmap(form.Width, form.Height); form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(args[1]);
                 }
-                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-result.txt"), "OK · 12 páginas, detecção PC/notebook, tela somente leitura/CDS_TEST, Windows Update simulado, manifesto/admin, botão somente em testes, resultado por item/falhas, Appx protegido preservado, WMI/RAM/processos/ASUS, backup em chave isolada e sintaxe PowerShell; nenhuma remoção ou ajuste real aplicado.");
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-result.txt"), "OK · 12 páginas, detecção PC/notebook, tela somente leitura/CDS_TEST, Windows Update simulado, ativação somente fixture/hash/consulta (motor real não executado), manifesto/admin, botão somente em testes, resultado por item/falhas, Appx protegido preservado, WMI/RAM/processos/ASUS, backup em chave isolada e sintaxe PowerShell; nenhuma remoção ou ajuste real aplicado.");
                 form.Close(); return 0;
             } catch (Exception e) { File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-result.txt"), e.ToString()); return 1; }
         }
