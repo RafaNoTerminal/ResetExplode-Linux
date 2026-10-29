@@ -7,12 +7,32 @@ public sealed partial class MainForm
     List<InfoRow> vivobook = [];
     TestResult? lastSetupResult;
     Button? lastSetupButton;
+    List<OperationRow>? appInventory;
+    Action? refreshAppChoices;
     void BuildAutomation(bool notebook = false)
     {
         var selected = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, BackColor = Surface, ForeColor = Ink, BorderStyle = BorderStyle.None, Font = new Font(Font.FontFamily, 11), IntegralHeight = false };
         var options = AutomationCatalog.All.Where(a => notebook ? a.Id is "usb-ac" or "pcie-ac" or "drivers-wu" : a.Id is not ("usb-ac" or "pcie-ac")).ToArray();
-        selected.Items.AddRange(options);
         var description = new TextBox { Dock = DockStyle.Bottom, Height = 95, Multiline = true, ReadOnly = true, BackColor = Surface, ForeColor = Ink, BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Vertical, Text = "Nenhuma ação marcada. Clique em uma linha para ler escopo e efeitos. Remoção de apps exige reinstalação para desfazer." };
+        var listStatus = new Label { Dock = DockStyle.Top, Height = 40, ForeColor = Color.Silver };
+        void Populate() {
+            if (selected.IsDisposed) return;
+            var checkedIds = selected.CheckedItems.Cast<SetupAction>().Select(a => a.Id).ToHashSet();
+            selected.BeginUpdate(); selected.Items.Clear();
+            foreach (var action in options) {
+                if (action.AppPattern is not null && appInventory is not null && !OperationResults.StillPresent(action, appInventory)) continue;
+                var item = action;
+                if (action.AppPattern is not null && appInventory is not null) {
+                    var rows = OperationResults.ForAction(action, appInventory);
+                    string suffix = rows.Any(r => r.Failed) ? " · consulta com falha" : rows.Any(r => r.Estado == "Preservado") ? " · protegido" : rows.Any(r => r.Escopo == "Novos perfis" && r.Estado == "Encontrado") && !rows.Any(r => r.Escopo == "Perfil atual" && r.Estado == "Encontrado") ? " · somente novos perfis" : "";
+                    item = action with { Title = action.Title + suffix };
+                }
+                int index = selected.Items.Add(item); selected.SetItemChecked(index, checkedIds.Contains(action.Id));
+            }
+            selected.EndUpdate();
+            if (!notebook) listStatus.Text = appInventory is null ? "Consultando apps… Use Atualizar lista para conferir novamente." : appInventory.Any(r => r.Failed) ? "Consulta com falhas: os itens não confirmados continuam visíveis. Consulte a prévia para os motivos." : $"Apps/grupos presentes: {selected.Items.Cast<SetupAction>().Count(a => a.AppPattern is not null)} · removidos e já ausentes ficam fora da lista. Novos perfis também são conferidos.";
+        }
+        Populate(); if (!notebook) refreshAppChoices = Populate;
         selected.SelectedIndexChanged += (_, _) => { if (selected.SelectedItem is SetupAction action) description.Text = action.Title + "\r\nEscopo: " + action.Scope + "\r\n" + action.Description; };
         content.Controls.Add(selected); content.Controls.Add(description);
         var actions = Actions();
@@ -21,7 +41,9 @@ public sealed partial class MainForm
         Button(actions, "Revisar e aplicar", () => _ = ReviewSetup(Current, true), true);
         Button(actions, "Restaurar backup", RestoreSetup, true);
         var history = Actions(); lastSetupButton = Button(history, "Último resultado", () => { if (lastSetupResult is not null) { using var dialog = SetupResultDialog(lastSetupResult); dialog.ShowDialog(this); } }); lastSetupButton.Enabled = lastSetupResult is not null;
+        if (!notebook) { Button(history, "Atualizar lista", () => _ = RefreshAppList(), true); content.Controls.Add(listStatus); }
         Heading(notebook ? "Vivobook · ajustes de teste" : "Ajustes do Windows", "Marque apenas o que deseja aplicar. A prévia mostra as mudanças; registro e energia têm backup local antes da alteração. Perfil de destino: " + Environment.UserName + (Automation.Admin ? " · administrador" : " · usuário comum"));
+        if (!notebook && appInventory is null && automaticQueries && task is null) _ = RefreshAppList();
     }
     async Task ReviewSetup(Func<SetupAction[]> getActions, bool apply)
     {
@@ -44,10 +66,30 @@ public sealed partial class MainForm
             // Appx servicing/uninstall is allowed to finish its current transaction.
             stop.Enabled = false; status.Text = "Aplicando seleção · aguarde a etapa atual concluir…";
             var result = await Automation.Apply(actions, ct);
+            if (actions.Any(a => a.AppPattern is not null)) {
+                status.Text = "Atualizando os apps que ficaram…";
+                try { await ReadAppInventory(CancellationToken.None); }
+                catch (Exception e) { result.Dados["Aviso ao atualizar lista"] = e.Message; }
+            }
             lastSetupResult = result;
             if (lastSetupButton is { IsDisposed: false }) lastSetupButton.Enabled = true;
             using (var dialog = SetupResultDialog(result)) dialog.ShowDialog(this);
             return result;
+        });
+    }
+    async Task ReadAppInventory(CancellationToken ct)
+    {
+        var actions = AutomationCatalog.Select(AutomationCatalog.All.Where(a => a.AppPattern is not null).Select(a => a.Id).Append("provisioned"));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromSeconds(45));
+        string json = await Automation.Packages(actions, apply: false, timeout.Token);
+        appInventory = OperationResults.Packages(json); refreshAppChoices?.Invoke();
+    }
+    async Task RefreshAppList()
+    {
+        if (task is not null) return;
+        await Run("Atualizar lista de apps", async ct => {
+            await ReadAppInventory(ct);
+            return TestResult.Done("Lista de apps atualizada", ("Consulta", "Perfil atual e provisionamento de novos perfis; nenhuma remoção executada."), ("Falhas de consulta", appInventory!.Count(r => r.Failed)));
         });
     }
     void RestoreSetup()

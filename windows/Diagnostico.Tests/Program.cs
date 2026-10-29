@@ -26,6 +26,13 @@ Check(OperationResults.Summary(operation).Contains("Microsoft.XboxGameCallableUI
 Check(Reports.Html(operation).Contains("0x80070005") && Reports.Json(operation).Contains("Microsoft.XboxGameCallableUI"), "Erro/item perdido nas exportações");
 var legacy = new TestResult("Ajustes do Windows", "Falhas", new() { ["Barra"] = "Erro: Attempted to perform an unauthorized operation.", ["Pacotes Appx"] = new[] { new { Escopo = "Perfil atual", Pacote = "Microsoft.XboxGameCallableUI_fixture", Estado = "Erro", Detalhes = "0x80073CFA / 0x80070032" } } }, DateTimeOffset.Now);
 Check(OperationResults.Read(legacy).Count(r => r.Failed) == 2, "As falhas do formato antigo não foram preservadas");
+var getHelp = AutomationCatalog.All.Single(a => a.Id == "app:Microsoft.GetHelp");
+Check(!OperationResults.StillPresent(getHelp, [new("App", "Microsoft.GetHelp_1.0_fixture", "Perfil atual", "Removido", "")]), "App removido permaneceu na lista");
+Check(!OperationResults.StillPresent(getHelp, [new("App", "Microsoft.GetHelp", "Perfil atual", "Ausente", ""), new("App", "Microsoft.GetHelp", "Novos perfis", "Ausente", "")]), "App ausente permaneceu na lista");
+Check(OperationResults.StillPresent(getHelp, [new("App", "Microsoft.GetHelp_1.0_fixture", "Perfil atual", "Erro", "bloqueado")]), "App com erro sumiu da lista");
+Check(OperationResults.StillPresent(getHelp, [new("App", "Microsoft.GetHelp", "Perfil atual", "Ausente", ""), new("App", "Microsoft.GetHelp_1.0_fixture", "Novos perfis", "Encontrado", "")]), "App ainda provisionado desapareceu");
+Check(OperationResults.StillPresent(AutomationCatalog.All.Single(a => a.Id == "app:Microsoft.Xbox*"), [new("App", "Microsoft.XboxGameCallableUI_1.0_fixture", "Perfil atual", "Preservado", "")]), "Componente protegido sumiu da lista");
+Check(OperationResults.StillPresent(getHelp, []), "Consulta ausente foi tratada como remoção confirmada");
 Check(NetworkDiagnostics.ValidateHost(" 1.1.1.1 ") == "1.1.1.1", "IP válido rejeitado");
 await Reject<ArgumentException>(() => NetworkDiagnostics.PingHost("example.com; rm", CancellationToken.None));
 await Reject<ArgumentException>(() => NetworkDiagnostics.PingHost("https://example.com/", CancellationToken.None));

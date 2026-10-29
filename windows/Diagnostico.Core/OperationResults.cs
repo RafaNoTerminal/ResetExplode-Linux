@@ -10,6 +10,14 @@ public record OperationRow(string Acao, string Item, string Escopo, string Estad
 
 public static class OperationResults
 {
+    public static List<OperationRow> ForAction(SetupAction action, IEnumerable<OperationRow> inventory) => inventory
+        .Where(row => action.AppPattern is not null && System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(action.AppPattern, row.Item.Split('_')[0], ignoreCase: true)).ToList();
+    public static bool StillPresent(SetupAction action, IEnumerable<OperationRow> inventory)
+    {
+        var rows = ForAction(action, inventory);
+        // An unsuccessful/missing query never proves the app was removed.
+        return rows.Count == 0 || rows.Any(row => row.Estado is not ("Ausente" or "Removido"));
+    }
     public static List<OperationRow> Read(TestResult result)
     {
         if (result.Dados.TryGetValue("Etapas", out var steps))

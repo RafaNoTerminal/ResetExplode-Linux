@@ -11,7 +11,7 @@ static class Program
                 using var form = new MainForm(collectOnShow: false); form.Show(); Application.DoEvents();
                 var inventory = Inventory.Collect();
                 form.VerifyUi(inventory);
-                form.VerifyTaskAndFailureUi();
+                form.VerifyTaskAndFailureUi(args.Length >= 2 ? args[1] : null);
                 SmokeChecks.VerifyAdministratorManifest();
                 SmokeChecks.VerifyPackageFailures();
                 if (!inventory.Any(x => x.Grupo == "CPU" && x.Campo == "Modelo")) throw new Exception("CPU ausente no inventário.");

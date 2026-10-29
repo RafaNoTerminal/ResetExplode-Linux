@@ -31,7 +31,7 @@ jobs:
           if (-not $p.WaitForExit(90000)) { $p.Kill(); throw 'Smoke test excedeu 90 segundos.' }
           Get-Content windows/artifacts/windows-x64/smoke-result.txt
           if ($p.ExitCode -ne 0) { throw "Smoke falhou: $($p.ExitCode)" }
-          Copy-Item $image windows/artifacts/windows-x64/windows-ui.png
+          Get-ChildItem (Join-Path $env:RUNNER_TEMP 'windows-ui*.png') | Copy-Item -Destination windows/artifacts/windows-x64/
       - name: Include documentation and checksums
         shell: pwsh
         run: |

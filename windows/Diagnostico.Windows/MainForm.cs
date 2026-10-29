@@ -18,10 +18,12 @@ public sealed partial class MainForm : Form
     DataGridView? inventoryGrid, processGrid, resultsGrid;
     Label? metrics;
     readonly System.Windows.Forms.Timer timer = new() { Interval = 4000 };
+    readonly bool automaticQueries;
     readonly string[] pages = ["Visão geral", "Hardware e sistema", "Processos e memória", "Testes de desempenho", "Rede e internet", "Tela e periféricos", "Ajustes do Windows", "Vivobook / ASUS", "Resultados e relatório", "Sobre"];
 
     public MainForm(bool collectOnShow = true)
     {
+        automaticQueries = collectOnShow;
         Text = Brand.Name + " · Windows"; Size = new Size(1180, 810); MinimumSize = new Size(970, 670);
         StartPosition = FormStartPosition.CenterScreen; BackColor = Background; ForeColor = Ink; Font = new Font("Segoe UI", 10);
         var sidebar = new Panel { Dock = DockStyle.Left, Width = 232, BackColor = Surface, Padding = new Padding(14, 20, 14, 14) };
@@ -61,7 +63,7 @@ public sealed partial class MainForm : Form
     void ShowPage(int index)
     {
         foreach (Control control in content.Controls.Cast<Control>().ToArray()) control.Dispose();
-        content.Controls.Clear(); runButtons.Clear(); inventoryGrid = processGrid = resultsGrid = null; metrics = null;
+        content.Controls.Clear(); runButtons.Clear(); inventoryGrid = processGrid = resultsGrid = null; metrics = null; refreshAppChoices = null;
         switch (index) {
             case 0:
                 var overview = Grid(); overview.DataSource = inventory.Where(x => x.Grupo is "Sistema" or "Equipamento" or "CPU").ToList();

@@ -22,18 +22,23 @@ internal static class SmokeChecks
         // Shadow cmdlets only inside this fixture process. Never remove real packages.
         string fixture = """
             $script:attempts=[System.Collections.Generic.List[string]]::new()
+            $script:removed=$false
             function Get-AppxPackage { param($Name,$ErrorAction)
-              @([pscustomobject]@{Name='Microsoft.XboxGameCallableUI';PackageFullName='protected_fixture';NonRemovable=$true},[pscustomobject]@{Name='Microsoft.XboxApp';PackageFullName='removable_fixture';NonRemovable=$false})
+              @([pscustomobject]@{Name='Microsoft.XboxGameCallableUI';PackageFullName='protected_fixture';NonRemovable=$true},[pscustomobject]@{Name='Microsoft.XboxApp';PackageFullName='failed_fixture';NonRemovable=$false})
+              if(-not $script:removed){[pscustomobject]@{Name='Microsoft.GetHelp';PackageFullName='removed_fixture';NonRemovable=$false}}
             }
             function Remove-AppxPackage { param($Package,$ErrorAction)
-              $script:attempts.Add($Package);throw 'Acesso negado fixture 0x80070005'
+              $script:attempts.Add($Package)
+              if($Package -eq 'removed_fixture'){$script:removed=$true;return}
+              throw 'Acesso negado fixture 0x80070005'
             }
             """;
-        string script = fixture + "\n$result = & {\n" + AutomationCatalog.PackageScript(AutomationCatalog.Select(["app:Microsoft.Xbox*"]), apply: true) + "\n}\n" + """
+        string script = fixture + "\n$result = & {\n" + AutomationCatalog.PackageScript(AutomationCatalog.Select(["app:Microsoft.Xbox*", "app:Microsoft.GetHelp"]), apply: true) + "\n}\n" + """
             $data=$result|ConvertFrom-Json
             if(@($data|Where-Object {$_.Estado -eq 'Preservado'}).Count -ne 1){throw 'Protegido sem classificação correta'}
             if(@($data|Where-Object {$_.Estado -eq 'Erro' -and $_.Detalhes -like '*0x80070005*'}).Count -ne 1){throw 'Falha sem mensagem completa'}
-            if($script:attempts.Count -ne 1 -or $script:attempts[0] -ne 'removable_fixture'){throw 'Tentou remover componente protegido'}
+            if(@($data|Where-Object {$_.Estado -eq 'Removido'}).Count -ne 1){throw 'App removido ausente do histórico'}
+            if($script:attempts.Count -ne 2 -or $script:attempts.Contains('protected_fixture')){throw 'Tentou remover componente protegido'}
             """;
         var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script)) }) start.ArgumentList.Add(argument);
