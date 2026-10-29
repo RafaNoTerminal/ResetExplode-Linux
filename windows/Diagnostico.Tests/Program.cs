@@ -74,6 +74,12 @@ Check(OperationResults.Read(activation).Single().Failed, "Retorno zero declarou 
 bool changed = false;
 activation = await ActivationFlow.Execute([ActivationMethod.WindowsHwid], () => Task.FromResult(changed ? licensed : unlicensed), _ => { changed = true; return Task.FromResult(new ActivationRun(0, "done", "")); });
 Check(OperationResults.Read(activation).Single().Estado == "Licenciado", "Windows licenciado após execução não confirmado");
+changed = false;
+activation = await ActivationFlow.Execute([ActivationMethod.WindowsHwid], () => Task.FromResult(changed ? licensed : unlicensed), _ => { changed = true; return Task.FromResult(new ActivationRun(1, "", "timeout: input redirected")); });
+Check(OperationResults.Read(activation).Single().Estado == "Licenciado", "Retorno do menu/timeout do batch mascarou consulta Windows licenciada");
+activation = await ActivationFlow.Execute([ActivationMethod.OfficeOhook], () => Task.FromResult(unlicensed), _ => Task.FromResult(new ActivationRun(1, "Office is permanently activated.", "timeout: input redirected")));
+Check(OperationResults.Read(activation).Single().Estado == "Informado pelo motor", "Retorno não contratual do batch mascarou resultado informado do Office");
+
 activation = await ActivationFlow.Execute([ActivationMethod.OfficeOhook], () => Task.FromResult(unlicensed), _ => Task.FromResult(new ActivationRun(0, "Office is permanently activated.", "")));
 Check(OperationResults.Read(activation).Single().Estado == "Informado pelo motor" && activation.Estado.Contains("pendente"), "Ohook foi confundido com licença WMI confirmada");
 activation = await ActivationFlow.Execute([ActivationMethod.OfficeOhook], () => Task.FromResult(unlicensed), _ => Task.FromResult(new ActivationRun(0, "Some errors were detected.", "")));

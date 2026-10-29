@@ -58,18 +58,18 @@ public static class ActivationFlow
             string state, details;
             if (method == ActivationMethod.WindowsHwid) {
                 bool correctEdition = after.Edition == before.Edition;
-                state = result.ExitCode == 0 && after.WindowsLicensed == true && correctEdition ? "Licenciado" : "Erro";
+                state = after.WindowsLicensed == true && correctEdition ? "Licenciado" : "Erro";
                 details = correctEdition ? "Consulta após execução: Windows atual licenciado=" + after.WindowsLicensed + "." : "A edição detectada mudou. Confira manualmente antes de continuar.";
             } else {
                 bool reported = method == ActivationMethod.OfficeOhook
                     ? output.Contains("Office is permanently activated.", StringComparison.OrdinalIgnoreCase)
                     : output.Contains("Successfully uninstalled Ohook activation.", StringComparison.OrdinalIgnoreCase);
-                state = result.ExitCode == 0 && reported ? "Informado pelo motor" : "Erro";
+                state = reported && !output.Contains("Some errors were detected.", StringComparison.OrdinalIgnoreCase) ? "Informado pelo motor" : "Erro";
                 details = method == ActivationMethod.OfficeOhook
                     ? "Resultado do MAS; Ohook não equivale ao estado WMI de uma licença Office. Abra Word/Excel para conferir o funcionamento."
                     : "Resultado do MAS; remoção de Ohook não restaura todas as alterações de licenciamento anteriores.";
             }
-            rows.Add(new(Name(method), "MAS " + EngineVersion, "Computador", state, "Retorno=" + result.ExitCode + ". " + details + "\n" + output + (after.Errors.Length > 0 ? "\nPendências da consulta: " + string.Join("; ", after.Errors) : "")));
+            rows.Add(new(Name(method), "MAS " + EngineVersion, "Computador", state, "Retorno=" + result.ExitCode + " (não usado sozinho para decidir o resultado do MAS). " + details + "\n" + output + (after.Errors.Length > 0 ? "\nPendências da consulta: " + string.Join("; ", after.Errors) : "")));
         }
         return new("Ativação · RBT", rows.Any(r => r.Failed) ? "Concluído com falhas; conferir detalhes" : rows.Any(r => r.Estado == "Informado pelo motor") ? "Resultado do motor; confirmação Office pendente" : "Windows licenciado na consulta local", new() { ["Etapas"] = rows.ToArray(), ["Motor"] = "Microsoft Activation Scripts " + EngineVersion + " · massgravel e colaboradores · GPL-3.0", ["SHA256 do motor"] = EngineHash, ["Estado antes"] = before, ["Observação"] = "Estado local/resultado técnico não comprova aquisição de licença. Nenhum resultado é inferido apenas pelo código de saída." }, DateTimeOffset.Now);
     }
