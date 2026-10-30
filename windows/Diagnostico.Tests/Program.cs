@@ -254,6 +254,32 @@ await Reject<IOException>(()=>{ReceiptPaperForm.Ensure(()=>(80000,100000),()=>th
 await Reject<System.ComponentModel.Win32Exception>(()=>{ReceiptPaperForm.Ensure(()=>throw new System.ComponentModel.Win32Exception(5),()=>throw new Exception("Não criar após acesso negado"));return Task.CompletedTask;});
 await Reject<System.ComponentModel.Win32Exception>(()=>{ReceiptPaperForm.Ensure(()=>throw new System.ComponentModel.Win32Exception(1902),()=>throw new System.ComponentModel.Win32Exception(5));return Task.CompletedTask;});
 await Reject<System.ComponentModel.Win32Exception>(()=>{ReceiptPaperForm.Ensure(()=>throw new System.ComponentModel.Win32Exception(1902),()=>{});return Task.CompletedTask;});
+var vendorForms=ElginUserForms.EnsureReceipt(null);
+Check(vendorForms.Length==92 && System.Text.Encoding.Unicode.GetString(vendorForms,4,64).Split('\0')[0]=="Comprovantes", "Registro UserForm inválido");
+Check(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(vendorForms.AsSpan(68))==72000 && System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(vendorForms.AsSpan(72))==100000,"Dimensões UserForm inválidas");
+Check(vendorForms.AsSpan(76).ToArray().All(b=>b==0),"UserForm diverge do RECT criado pela interface original");
+Check(ElginUserForms.EnsureReceipt(vendorForms).SequenceEqual(vendorForms),"Duplicou cadastro UserForm");
+var existingForm=(byte[])vendorForms.Clone();Array.Clear(existingForm,4,64);System.Text.Encoding.Unicode.GetBytes("Outro papel").CopyTo(existingForm,4);
+Check(ElginUserForms.EnsureReceipt(existingForm).AsSpan(0,92).SequenceEqual(existingForm),"Outro papel do driver não foi preservado");
+var conflict=(byte[])vendorForms.Clone();conflict[68]^=1;
+await Reject<IOException>(()=>Task.FromResult(ElginUserForms.EnsureReceipt(conflict)));
+await Reject<IOException>(()=>Task.FromResult(ElginUserForms.EnsureReceipt(new byte[91])));
+await Reject<IOException>(()=>Task.FromResult(ElginUserForms.EnsureReceipt(vendorForms.Concat(vendorForms).ToArray())));
+Check(ElginUserForms.ResolveReceipt([(256,"Custom",720,2970),(311,"Comprovantes",720,1000)])==311,"Usou ID fixo ou Custom em vez do papel do driver");
+await Reject<IOException>(()=>Task.FromResult(ElginUserForms.ResolveReceipt([(256,"Custom",720,1000)])));
+await Reject<IOException>(()=>Task.FromResult(ElginUserForms.ResolveReceipt([(311,"Comprovantes",720,2970)])));
+var namedMode=ElginReceiptPreset.NamedPaper(automatic.DevMode,311);
+ElginReceiptPreset.VerifyNamedPaper(namedMode,automatic.Driver,automatic.DriverFingerprint,311);
+Check(namedMode.AsSpan(220).SequenceEqual(automatic.DevMode.AsSpan(220)),"Escolher papel alterou privados/corte/logo");
+await Reject<IOException>(()=>Task.Run(()=>ElginReceiptPreset.VerifyNamedPaper(vendorNormalized,automatic.Driver,automatic.DriverFingerprint,311)));
+int prepareRollback=0;
+await Reject<IOException>(()=>Task.Run(()=>ReceiptPreferenceTransaction.Apply(()=>throw new IOException("Registro do driver falhou"),_=>null,(_,_)=>throw new Exception("Não deveria gravar"),()=>prepareRollback++)));
+Check(prepareRollback==1,"Falha na preparação não restaurou os papéis do driver");
+var coldStore=new Dictionary<uint,byte[]?>{{8,namedMode},{9,namedMode}};int coldRollback=0;
+await Reject<IOException>(()=>Task.Run(()=>ReceiptPreferenceTransaction.Apply(()=>namedMode,n=>coldStore[n],(n,v)=>coldStore[n]=v,()=>coldRollback++,()=>throw new IOException("Driver ao reabrir divergiu"))));
+Check(coldRollback==1,"Falha ao reabrir fila não disparou restauração");
+string? namedOutput=Environment.GetEnvironmentVariable("RBT_ELGIN_NAMED_OUTPUT");
+if(!string.IsNullOrWhiteSpace(namedOutput)){File.WriteAllBytes(namedOutput,ElginReceiptPreset.NamedPaper(automatic.DevMode,257));File.WriteAllBytes(namedOutput+".forms",vendorForms);}
 Console.WriteLine($"Total final: {passed} verificações aprovadas.");
 
 sealed class FixtureHandler : HttpMessageHandler

@@ -49,3 +49,12 @@ Esse teste prova a interpretação dos valores pelo código real do driver. Não
 ## Normalização0.5.6
 
 `ElginDriverNormalizationProbe.c` reproduz o mergeRVA0x26fcc da DLL exata, usando defaultRVA0x4f20 e metadados mínimos fictícios de limites de papel. Não registra spooler/driver nem envia hardware. A tentativa inicial usando o XPD bruto como estrutura interna foi inválida e descartada; o teste válido usa metadados em memória e a rotina de merge isolada. Observado: papel256/1000/720, nome com primeiroWCHAR NUL e bytes residuais de Custom, flags0x1a513; corte/logo preservados. O codec deve aceitar esse resultado sem exigir nome Comprovantes ou bitsDM_PAPERLENGTH/WIDTH, conferindo as medidas. Execute a saída `.normalized` pelos testesCore com `RBT_ELGIN_NORMALIZED_INPUT` para conferir o verificador de produção. A tolerância é somente à representação pública do papel; demais critérios permanecem exigidos.
+
+
+## Papel nomeado e visualização do logo0.5.7
+
+A interface do fabricante lê `GetPrinterDataW(UserForm)`, não apenas os formulários cadastrados por AddForm. UserForm é REG_BINARY com registros92bytes: flagsDWORD0, nomeWCHAR32 em4, larguraLONG68, alturaLONG72 eRECT76; dimensões emmicrômetros. A própria interface criaRECTzerado. O codec preserva outros registros e recusa conflito/duplicatas/formato desconhecido. O app não usa RVAs em produção: usaGet/SetPrinterDataW eDeviceCapabilitiesW para consultarID/nome/tamanho atuais. Backup2 inclui os bytesUserForm para rollback.
+
+`ElginDriverNamedPaperProbe.c` carrega a DLL exata e simula apenasGetPrinterDataW no processo de teste. O parserRVA28034 aceita os registros gerados por `ElginUserForms`; o mergeRVA26fcc é executado com listas de papel fictícias e o resultado passa pelas páginas reais. Use `RBT_ELGIN_NAMED_OUTPUT=...` nos testesCore para gerarDEVMODEe`.forms`, compile comMinGW/commctrl e rode noWine/Xvfbisolado. O primeiro teste teve um erro no mock(pTypeNULL permitido pelaAPI), corrigido antes do teste final; nenhumSpooler foi acessado.
+
+A DLL seleciona por padrão o primeiro itemTempo/Início do documento ao abrir a página de logo. Selecionar visualmenteInício da página mostra o registro configurado sem o alterar. O probe cobreload/save de papel e logo em inglês e português. Não confundir o itemTempo inicialmente exibido com o evento efetivamente habilitado para impressão.

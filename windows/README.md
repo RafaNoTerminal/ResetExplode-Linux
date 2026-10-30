@@ -1,4 +1,4 @@
-# RBT Diagnóstico · Windows 0.5.6
+# RBT Diagnóstico · Windows 0.5.7
 
 **0.5.2: comprovantes automáticos, sem primeira configuração manual.** Em Impressoras/empresa → Comprovantes: driver e perfil, instale o driver Elgin fornecido, marque as unidades e clique **Adicionar e configurar automaticamente**. Para filas já instaladas, use **Ajustes automáticos → Aplicar automaticamente às filas marcadas**. Papel72×100mm, corte parcial no fim da página/0mm e logo salvo no início da página/Meio/chave0/0 são escritos e relidos pelo app; não exige capturar modelo. A imagem física do logo deve estar gravada na impressora (seleção automática do logo não grava a imagem). O fluxo de modelo manual descrito no histórico0.5.1 passou a ser uma alternativa opcional.
 
@@ -183,3 +183,12 @@ Referências: [GetForm](https://learn.microsoft.com/en-us/windows/win32/printdoc
 ## 0.5.6 — Normalização real do papel personalizado Elgin
 
 O relatório0.5.5 ultrapassou o cadastro de papel e falhou na conferência após DocumentProperties. Reproduzido com a rotina de merge da DLL original, em memória isolada: ela mantém72×100mm/corte/logo, mas usa DMPAPER_USER256, zera o primeiro WCHAR do nome de formulário e retira os bits de dimensões explícitas. A conferência agora aceita essa representação e interpreta o nome até o primeiro NUL; continua exigindo dimensões exatas, orientação, mono/simplex e todos os campos corte/logo. Não aceita outro papel/tamanho nem mascara alterações privadas. Erros mostram todos os valores observados. Testes incluem regressão da representação normalizada e rejeição de cada ajuste divergente. Teste físico noPC continua necessário.
+
+
+## 0.5.7 — Papel na lista da Elgin e confirmação após reabrir
+
+Rafael conferiu o driver real e informou que somente corte havia mudado, apesar da confirmação anterior. O app agora cadastra Comprovantes também na lista privada `UserForm` usada pelo botão Gerenciar do driver, preservando os demais registros; seleciona o ID real anunciado por DeviceCapabilities, em vez de usar o item genérico Custom256. Dimensões e nome precisam permanecer72×100/Comprovantes após normalização, gravação, reabertura e nova consulta ao driver. Falhas em qualquer etapa restauram preferências e UserForm pelo backup2; backups1 continuam compatíveis para preferências e não continham UserForm.
+
+O teste com a DLL original comprovou que a tela de logo sempre abre no evento Início do documento, independente de haver configuração no evento Início da página. Ao consultar este segundo evento, a DLL mostrou Logo salvo/Meio/chaves0/0 conforme o preset. A tela do app explica essa seleção de visualização; nenhuma configuração manual de modelo é exigida. Resultado agora separa papel/corte/logo e mostra valores relidos de global/conta atual após reabrir, sem afirmar impressão física aprovada.
+
+O teste `ElginDriverNamedPaperProbe.c` usa o UserForm produzido pelo codecCore e a DLL exata, com GetPrinterData simulado em memória. O parser do fabricante lê o registro92bytes; o merge normaliza o modo com o papel nomeado; as páginas reais mostram Comprovantes e os ajustes do logo. Teste isolado, sem instalar driver/fila ou enviar hardware. A execução noPC e a impressão física continuam pendentes.

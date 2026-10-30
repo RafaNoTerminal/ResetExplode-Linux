@@ -34,13 +34,29 @@ public static class ElginReceiptPreset
         var result = new ReceiptProfile(1, driver, fingerprint, mode, false, DateTimeOffset.Now, "AutomaticPreset");
         Verify(mode, driver, fingerprint); return result;
     }
+    public static byte[] NamedPaper(byte[] mode, ushort id) {
+        Verify(mode, DriverName, Fingerprint);
+        if(id<=256 || id>short.MaxValue)throw new ArgumentException("Identificador de papel Elgin inválido.");
+        var copy=(byte[])mode.Clone();Put16(copy,78,id);
+        Put32(copy,72,(Read32(copy,72)|0x10003)&~12);
+        Array.Clear(copy,102,64);Encoding.Unicode.GetBytes("Comprovantes").CopyTo(copy,102);
+        return copy;
+    }
+    public static void VerifyNamedPaper(byte[] mode,string driver,string fingerprint,ushort id) {
+        Verify(mode,driver,fingerprint);
+        if(Read16(mode,78)!=id || !Encoding.Unicode.GetString(mode,102,64).Split('\0')[0].Equals("Comprovantes",StringComparison.OrdinalIgnoreCase))throw new IOException("O driver não manteve a seleção do papel Comprovantes. "+Describe(mode));
+    }
+    public static string Describe(byte[] mode) {
+        ReceiptProfile.ValidateMode(mode);
+        return $"Papel='{Encoding.Unicode.GetString(mode,102,64).Split('\0')[0]}', ID={Read16(mode,78)}, {Read16(mode,82)/10.0:0.#}×{Read16(mode,80)/10.0:0.#} mm; corte={Read32(mode,CutWhen)}/{Read32(mode,CutMode)}/{Read32(mode,CutDistance)}; logo no início da página: eventos=0x{Read32(mode,LogoEvents):x}, tipo={Read32(mode,LogoMode)}, chaves={mode[Key1]}/{mode[Key2]}, posição={Read32(mode,Position)}.";
+    }
     public static void Verify(byte[] mode, string driver, string fingerprint) {
         Compatible(mode, driver, fingerprint);
         // The original driver normalizes DMPAPER_USER to dimensions, clears the
         // first WCHAR of dmFormName and drops DM_PAPERLENGTH/DM_PAPERWIDTH.
         // Bytes after the first NUL are unspecified; do not treat them as a name.
         string formName = Encoding.Unicode.GetString(mode, 102, 64).Split('\0')[0];
-        bool paper = formName == "Comprovantes" || (Read16(mode,78) == 256 && formName.Length == 0);
+        bool paper = formName.Equals("Comprovantes",StringComparison.OrdinalIgnoreCase) || (Read16(mode,78) == 256 && formName.Length == 0);
         if (Read16(mode, 76) != 1 || Read16(mode, 80) != 1000 || Read16(mode, 82) != 720 || Read16(mode, 92) != 1 || Read16(mode, 94) != 1 || !paper || (Read32(mode,72) & 3) != 3 || Read32(mode, CutWhen) != 8 || Read32(mode, CutMode) != 1 || Read32(mode, CutDistance) != 0 || (Read32(mode, LogoEvents) & 15) != 4 || Read32(mode, LogoMode) != 2 || mode[Key1] != 48 || mode[Key2] != 48 || Read32(mode, Position) != 2) throw new IOException($"O driver não confirmou os ajustes automáticos. Papel='{formName}', tipo={Read16(mode,78)}, largura={Read16(mode,82)}/10 mm, comprimento={Read16(mode,80)}/10 mm, orientação={Read16(mode,76)}, cor={Read16(mode,92)}, duplex={Read16(mode,94)}, flags=0x{Read32(mode,72):x}; corte={Read32(mode,CutWhen)}/{Read32(mode,CutMode)}/{Read32(mode,CutDistance)}; logo eventos=0x{Read32(mode,LogoEvents):x}, tipo={Read32(mode,LogoMode)}, chaves={mode[Key1]}/{mode[Key2]}, posição={Read32(mode,Position)}. Nenhuma confirmação de ajuste foi emitida.");
     }
 }

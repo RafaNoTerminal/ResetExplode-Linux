@@ -24,7 +24,7 @@ int wmain(int argc,wchar_t **argv){
  ((Helper)((unsigned char*)lib+0x17de8))(cut,ctx,1);((Helper)((unsigned char*)lib+0x17fe8))(cut,ctx,1);((Helper)((unsigned char*)lib+0x180b0))(cut,ctx,1);
  showcombo(cut,1087);showcombo(cut,1088);wchar_t distance[64];GetDlgItemTextW(cut,1089,distance,64);wprintf(L"cut distance=%ls\n",distance);
  unsigned char *slot=ctx+0x3e0+0x214;
- ((Helper)((unsigned char*)lib+0x1bea4))(logo,ctx,1);((Helper)((unsigned char*)lib+0x1bc20))(logo,ctx,1);
+ ((Helper)((unsigned char*)lib+0x1bc20))(logo,ctx,1);((Helper)((unsigned char*)lib+0x1bea4))(logo,ctx,1);
  SendDlgItemMessageW(logo,1126,CB_SETCURSEL,1,0);
  ((Helper)((unsigned char*)lib+0x1aea8))(logo,ctx,1);((Helper)((unsigned char*)lib+0x1b50c))(logo,ctx,1);((Helper)((unsigned char*)lib+0x1b79c))(logo,ctx,1);((Helper)((unsigned char*)lib+0x1b970))(logo,ctx,1);
  showcombo(logo,1126);showcombo(logo,1128);showcombo(logo,1124);showcombo(logo,1125);

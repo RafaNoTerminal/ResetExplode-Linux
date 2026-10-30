@@ -5,12 +5,13 @@ using System.Text;
 using System.Text.Json;
 namespace Diagnostico.Windows;
 
-internal record ReceiptQueueBackup(int Format, string Computer, string Queue, string Driver, string Fingerprint, byte[] Global, byte[]? User, DateTimeOffset SavedAt);
+internal record ReceiptQueueBackup(int Format, string Computer, string Queue, string Driver, string Fingerprint, byte[] Global, byte[]? User, DateTimeOffset SavedAt, byte[]? DriverForms = null);
 internal sealed class ElginPreferences : IDisposable
 {
     readonly IntPtr handle; readonly string queue;
     internal string Driver { get; }
     internal string Fingerprint { get; }
+    internal string VerifiedDetails { get; private set; } = "";
     internal ElginPreferences(string name) {
         queue = name; var defaults = new PrinterDefaults { Access = 0xC }; // Administer + use this printer only.
         if (!OpenPrinter(name, out handle, ref defaults)) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -76,21 +77,82 @@ internal sealed class ElginPreferences : IDisposable
     internal string Backup(string directory) {
         Directory.CreateDirectory(directory);
         string file = Path.Combine(directory, "elgin-completo-" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(file, Reports.Json(new ReceiptQueueBackup(1, Environment.MachineName, queue, Driver, Fingerprint, Read(8) ?? throw new IOException("Preferência global ausente."), Read(9), DateTimeOffset.Now)));
+        File.WriteAllText(file, Reports.Json(new ReceiptQueueBackup(2, Environment.MachineName, queue, Driver, Fingerprint, Read(8) ?? throw new IOException("Preferência global ausente."), Read(9), DateTimeOffset.Now, ReadDriverForms())));
         return file;
     }
     internal ReceiptProfile AutomaticProfile() => ElginReceiptPreset.Build(Read(8) ?? throw new IOException("O driver não expôs preferências globais."), Driver, Fingerprint);
     internal string Apply(ReceiptProfile profile, string backupDirectory) {
         profile.Compatible(Driver, Fingerprint);
         string backup = Backup(backupDirectory);
-        var requested = ReceiptProfile.ForQueue(profile.DevMode, queue);
-        EnsureReceiptForm(requested);
-        var normalized = Normalize(requested)!;
-        if (profile.Method == "AutomaticPreset") ElginReceiptPreset.Verify(normalized, Driver, Fingerprint);
-        if (profile.Method == "AutomaticPreset" ? !requested.AsSpan(220).SequenceEqual(normalized.AsSpan(220)) : !ReceiptProfile.SameSettings(requested, normalized)) throw new IOException((profile.Method == "AutomaticPreset" ? "O driver não preservou os ajustes automáticos. Nenhuma preferência foi aplicada; confira se o pacote Elgin é o fornecido. Backup=" : "O driver normalizou o modelo para preferências diferentes. Nenhuma preferência foi aplicada. Configure uma fila modelo neste PC e capture novamente. Backup=") + backup);
-        try { ReceiptPreferenceTransaction.Apply(normalized, Read, Set, () => Restore(backup)); }
-        catch (Exception e) { throw new IOException(e.Message + " Backup=" + backup); }
+        bool automatic=profile.Method=="AutomaticPreset";ushort paperId=0;
+        try {
+            ReceiptPreferenceTransaction.Apply(() => {
+                var requested=ReceiptProfile.ForQueue(profile.DevMode,queue);
+                EnsureReceiptForm(requested);
+                if(automatic) {
+                    var before=ReadDriverForms();var desiredForms=ElginUserForms.EnsureReceipt(before);
+                    if(before is null || !before.AsSpan().SequenceEqual(desiredForms))WriteDriverForms(desiredForms);
+                    paperId=ResolvePaper();requested=ElginReceiptPreset.NamedPaper(requested,paperId);
+                }
+                var normalized=Normalize(requested)!;
+                if(automatic)ElginReceiptPreset.VerifyNamedPaper(normalized,Driver,Fingerprint,paperId);
+                if(automatic ? !requested.AsSpan(220).SequenceEqual(normalized.AsSpan(220)) : !ReceiptProfile.SameSettings(requested,normalized))throw new IOException("O driver não preservou as preferências solicitadas.");
+                return normalized;
+            },Read,Set,()=>Restore(backup),()=> {
+                if(!automatic)return;
+                // Reopen, reread and ask the driver to interpret persisted preferences.
+                using var fresh=new ElginPreferences(queue);
+                var details=new List<string>();
+                foreach(uint level in new uint[]{8,9}) {
+                    var stored=fresh.Read(level) ?? throw new IOException("Preferências gravadas ausentes.");
+                    ElginReceiptPreset.VerifyNamedPaper(stored,fresh.Driver,fresh.Fingerprint,paperId);
+                    var effective=fresh.Normalize(stored)!;
+                    ElginReceiptPreset.VerifyNamedPaper(effective,fresh.Driver,fresh.Fingerprint,paperId);
+                    details.Add((level==8?"Global: ":"Conta "+Environment.UserDomainName+"\\"+Environment.UserName+": ")+ElginReceiptPreset.Describe(effective));
+                }
+                if(fresh.ResolvePaper()!=paperId)throw new IOException("O cadastro de papel não persistiu ao reabrir a fila.");
+                VerifiedDetails=string.Join("\r\n",details);
+            });
+        } catch(Exception e) {throw new IOException(e.Message+" Backup="+backup,e);}
         return backup;
+    }
+    byte[]? ReadDriverForms() {
+        uint result=GetPrinterData(handle,"UserForm",out uint type,IntPtr.Zero,0,out uint needed);
+        if(result==2)return null;
+        if(result is not 0 and not 234 || needed>1048576 || type!=3)throw new IOException("GetPrinterData(UserForm): código="+result+", tipo="+type+". Lista preservada.");
+        if(needed==0)return [];
+        IntPtr buffer=Marshal.AllocHGlobal((int)needed);
+        try {
+            result=GetPrinterData(handle,"UserForm",out type,buffer,needed,out uint actual);
+            if(result!=0 || type!=3 || actual!=needed)throw new IOException("A lista de papéis Elgin mudou durante a leitura. Código="+result);
+            byte[] bytes=new byte[needed];Marshal.Copy(buffer,bytes,0,bytes.Length);return bytes;
+        } finally {Marshal.FreeHGlobal(buffer);}
+    }
+    void WriteDriverForms(byte[]? data) {
+        uint result=data is null ? DeletePrinterData(handle,"UserForm") : SetPrinterData(handle,"UserForm",3,data,(uint)data.Length);
+        if(result!=0 && !(data is null && result==2))throw new Win32Exception((int)result,"Não foi possível gravar/restaurar os papéis do driver Elgin. Código="+result);
+        var actual=ReadDriverForms();
+        if(data is null ? actual is not null : actual is null || !actual.AsSpan().SequenceEqual(data))throw new IOException("A gravação dos papéis Elgin não foi confirmada.");
+    }
+    ushort ResolvePaper() {
+        const int limit=4096;var blocks=new List<IntPtr>();
+        string port;
+        var info=Buffer((IntPtr p,uint size,out uint needed)=>GetPrinter(handle,2,p,size,out needed));
+        try {port=Marshal.PtrToStringUni(Marshal.ReadIntPtr(info,3*IntPtr.Size)) ?? throw new IOException("Porta da fila não identificada.");}
+        finally {Marshal.FreeHGlobal(info);}
+        try {
+            IntPtr Query(ushort capability,int stride,out int count) {
+                count=DeviceCapabilities(queue,port,capability,IntPtr.Zero,IntPtr.Zero);
+                if(count<=0 || count>limit)throw new IOException("O driver não listou os papéis. Capability="+capability+", retorno="+count);
+                var buffer=Marshal.AllocHGlobal(limit*stride);blocks.Add(buffer);
+                if(DeviceCapabilities(queue,port,capability,buffer,IntPtr.Zero)!=count)throw new IOException("A lista de papéis mudou durante a consulta.");return buffer;
+            }
+            var ids=Query(2,2,out int count);var names=Query(16,128,out int namesCount);var sizes=Query(3,8,out int sizesCount);
+            if(count!=namesCount || count!=sizesCount)throw new IOException("Listas de papéis inconsistentes no driver.");
+            var entries=new (ushort Id,string Name,int Width,int Height)[count];
+            for(int i=0;i<count;i++)entries[i]=((ushort)Marshal.ReadInt16(ids,i*2),Marshal.PtrToStringUni(IntPtr.Add(names,i*128),64)!.Split('\0')[0],Marshal.ReadInt32(sizes,i*8),Marshal.ReadInt32(sizes,i*8+4));
+            return ElginUserForms.ResolveReceipt(entries);
+        } finally {foreach(var buffer in blocks)Marshal.FreeHGlobal(buffer);}
     }
     void EnsureReceiptForm(byte[] mode) {
         string formName = Encoding.Unicode.GetString(mode, 102, 64).TrimEnd('\0');
@@ -112,14 +174,20 @@ internal sealed class ElginPreferences : IDisposable
     }
     internal void Restore(string file) {
         var saved = JsonSerializer.Deserialize<ReceiptQueueBackup>(File.ReadAllText(file)) ?? throw new IOException("Backup inválido.");
-        if (saved.Format != 1 || saved.Computer != Environment.MachineName || saved.Queue != queue || saved.Driver != Driver || saved.Fingerprint != Fingerprint) throw new IOException("Backup de outra fila/PC/driver. Nenhuma preferência foi restaurada.");
+        if (saved.Format is not 1 and not 2 || saved.Computer != Environment.MachineName || saved.Queue != queue || saved.Driver != Driver || saved.Fingerprint != Fingerprint) throw new IOException("Backup de outra fila/PC/driver. Nenhuma preferência foi restaurada.");
         ReceiptProfile.ValidateMode(saved.Global); if (saved.User is not null) ReceiptProfile.ValidateMode(saved.User);
+        if(saved.Format==2 && saved.DriverForms is not null && (saved.DriverForms.Length%ElginUserForms.RecordSize!=0 || saved.DriverForms.Length>1048576))throw new IOException("Backup contém lista de papéis Elgin inválida.");
+        if(saved.Format==2)WriteDriverForms(saved.DriverForms);
         Set(8, saved.Global); Set(9, saved.User);
         if (!ReceiptProfile.SameSettings(saved.Global, Read(8) ?? [])) throw new IOException("Restauração global não foi confirmada.");
         var user = Read(9);
         if (saved.User is not null && !ReceiptProfile.SameSettings(saved.User, user ?? [])) throw new IOException("Restauração do perfil atual não foi confirmada.");
     }
     public void Dispose() => ClosePrinter(handle);
+    [DllImport("winspool.drv",EntryPoint="GetPrinterDataW",CharSet=CharSet.Unicode)] static extern uint GetPrinterData(IntPtr printer,string name,out uint type,IntPtr data,uint size,out uint needed);
+    [DllImport("winspool.drv",EntryPoint="SetPrinterDataW",CharSet=CharSet.Unicode)] static extern uint SetPrinterData(IntPtr printer,string name,uint type,byte[] data,uint size);
+    [DllImport("winspool.drv",EntryPoint="DeletePrinterDataW",CharSet=CharSet.Unicode)] static extern uint DeletePrinterData(IntPtr printer,string name);
+    [DllImport("winspool.drv",EntryPoint="DeviceCapabilitiesW",CharSet=CharSet.Unicode)] static extern int DeviceCapabilities(string device,string? port,ushort capability,IntPtr output,IntPtr mode);
     [StructLayout(LayoutKind.Sequential)] struct FormInfo1 { public uint Flags; public IntPtr Name; public int Width, Height, Left, Top, Right, Bottom; }
     [DllImport("winspool.drv", EntryPoint="GetFormW", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetForm(IntPtr handle, string name, uint level, IntPtr buffer, uint size, out uint needed);
     [DllImport("winspool.drv", EntryPoint="AddFormW", SetLastError=true)] static extern bool AddForm(IntPtr handle, uint level, ref FormInfo1 form);

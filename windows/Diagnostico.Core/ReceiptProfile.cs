@@ -37,10 +37,14 @@ public record ReceiptProfile(int Format, string Driver, string DriverFingerprint
 public static class ReceiptPreferenceTransaction
 {
     public static void Apply(byte[] desired, Func<uint, byte[]?> read, Action<uint, byte[]?> write, Action restore) {
-        ReceiptProfile.ValidateMode(desired);
+        Apply(()=>desired,read,write,restore);
+    }
+    public static void Apply(Func<byte[]> prepare, Func<uint,byte[]?> read, Action<uint,byte[]?> write, Action restore, Action? verifyEffective=null) {
         try {
+            byte[] desired=prepare();ReceiptProfile.ValidateMode(desired);
             write(8, desired); write(9, desired);
             if (!ReceiptProfile.SameSettings(desired, read(8) ?? []) || !ReceiptProfile.SameSettings(desired, read(9) ?? [])) throw new IOException("Releitura não confirmou as preferências completas.");
+            verifyEffective?.Invoke();
         } catch (Exception applyError) {
             try { restore(); } catch (Exception rollbackError) { throw new IOException("Falha ao aplicar e ao restaurar: " + applyError.Message + "; restauração=" + rollbackError.Message); }
             throw new IOException("Preferências anteriores restauradas após falha: " + applyError.Message);

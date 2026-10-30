@@ -46,15 +46,17 @@ internal static class ElginSetupService
         foreach (var printer in printers) {
             try {
                 await CheckQueue(printer.Name, printer);
-                string backup = await Task.Run(() => {
+                var applied = await Task.Run(() => {
                     using var settings = new ElginPreferences(printer.Name);
                     var preset = settings.AutomaticProfile();
                     string file = settings.Apply(preset, Automation.BackupDirectory);
                     ElginReceiptPreset.Verify(settings.Read(8) ?? [], settings.Driver, settings.Fingerprint);
                     ElginReceiptPreset.Verify(settings.Read(9) ?? [], settings.Driver, settings.Fingerprint);
-                    return file;
+                    return (Backup:file,Details:settings.VerifiedDetails);
                 });
-                rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Padrão global e conta executando o RBT", "Aplicado", ElginReceiptPreset.Description + " Valores relidos e conferidos no driver; sem captura de modelo. Backup=" + backup + ". Impressão física e presença do logo na memória da impressora precisam de conferência."));
+                rows.Add(new("Conferir papel Comprovantes",printer.Name,"Global e conta atual","Confirmado","Formato cadastrado na lista própria da Elgin e selecionado por ID; 72×100 mm. "+applied.Details));
+                rows.Add(new("Conferir corte",printer.Name,"Global e conta atual","Confirmado","Fim da página / corte parcial / 0 mm, relido após reabrir a fila. Backup="+applied.Backup));
+                rows.Add(new("Conferir logotipo",printer.Name,"Global e conta atual","Confirmado","Início da página / logo salvo / Meio / chaves0/0. A janela da Elgin abre inicialmente no evento Início do documento; para consultar este ajuste, selecione Início da página. Isso apenas muda o evento exibido, não exige configurar manualmente. A imagem precisa existir na memória da impressora; impressão real pendente."));
             } catch (Exception e) { rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Fila selecionada", "Erro", e.ToString())); }
         }
         return new("Comprovantes · ajuste automático", rows.Any(r => r.Failed) ? "Concluído com falhas" : "Ajustes aplicados; impressão física pendente", new() { ["Etapas"] = rows.ToArray(), ["Limite"] = "Não é preciso configurar/capturar modelo manual. A imagem do logotipo deve já estar gravada na impressora; selecionar logo não envia a imagem. Nenhum firmware enviado." }, DateTimeOffset.Now);
