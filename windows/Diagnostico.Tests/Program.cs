@@ -209,6 +209,20 @@ foreach (int offset in new[] { 0x33c, 0x340, 0x344, 0x3a0, 0x7c0, 0x7c4, 0x7c5, 
     var changedPreset = (byte[])automatic.DevMode.Clone(); changedPreset[offset] ^= 1;
     await Reject<IOException>(() => Task.Run(() => ElginReceiptPreset.Verify(changedPreset, automatic.Driver, automatic.DriverFingerprint)));
 }
+// Representation reproduced by the genuine vendor merge routine, without a printer.
+var vendorNormalized = (byte[])automatic.DevMode.Clone();
+System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(vendorNormalized.AsSpan(72),0x1a513);
+System.Text.Encoding.Unicode.GetBytes("\0ustom").CopyTo(vendorNormalized,102);
+ElginReceiptPreset.Verify(vendorNormalized,automatic.Driver,automatic.DriverFingerprint);
+Check(true,"Tamanho personalizado normalizado pelo driver foi recusado");
+foreach(int offset in new[]{76,78,80,82,92,94,0x33c,0x340,0x344,0x3a0,0x7c0,0x7c4,0x7c5,0x7c8}) {
+ var wrong=(byte[])vendorNormalized.Clone();wrong[offset]^=1;
+ await Reject<IOException>(()=>Task.Run(()=>ElginReceiptPreset.Verify(wrong,automatic.Driver,automatic.DriverFingerprint)));
+}
+var wrongForm=(byte[])vendorNormalized.Clone();System.Text.Encoding.Unicode.GetBytes("Outro").CopyTo(wrongForm,102);
+await Reject<IOException>(()=>Task.Run(()=>ElginReceiptPreset.Verify(wrongForm,automatic.Driver,automatic.DriverFingerprint)));
+string? normalizedInput=Environment.GetEnvironmentVariable("RBT_ELGIN_NORMALIZED_INPUT");
+if(!string.IsNullOrWhiteSpace(normalizedInput)){ElginReceiptPreset.Verify(File.ReadAllBytes(normalizedInput),automatic.Driver,automatic.DriverFingerprint);Check(true,"Saída da DLL original recusada");}
 string? codecOutput = Environment.GetEnvironmentVariable("RBT_ELGIN_CODEC_OUTPUT");
 if (!string.IsNullOrWhiteSpace(codecOutput)) File.WriteAllBytes(codecOutput, automatic.DevMode);
 var localDriver = new LocalPrinterPackage("Fixture Ricoh", "DRIVERS/FixtureRicoh", "fixture.inf", new string('a',64), "fixture.cat", new string('b',64), ["Fixture Ricoh", "Fixture Ricoh 2"], "Fixture Ricoh");

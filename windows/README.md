@@ -1,4 +1,4 @@
-# RBT Diagnóstico · Windows 0.5.5
+# RBT Diagnóstico · Windows 0.5.6
 
 **0.5.2: comprovantes automáticos, sem primeira configuração manual.** Em Impressoras/empresa → Comprovantes: driver e perfil, instale o driver Elgin fornecido, marque as unidades e clique **Adicionar e configurar automaticamente**. Para filas já instaladas, use **Ajustes automáticos → Aplicar automaticamente às filas marcadas**. Papel72×100mm, corte parcial no fim da página/0mm e logo salvo no início da página/Meio/chave0/0 são escritos e relidos pelo app; não exige capturar modelo. A imagem física do logo deve estar gravada na impressora (seleção automática do logo não grava a imagem). O fluxo de modelo manual descrito no histórico0.5.1 passou a ser uma alternativa opcional.
 
@@ -178,3 +178,8 @@ O relatório de campo 0.5.4 confirmou instalação do driver Elgin e das filas, 
 A antiga tela de perfis foi substituída por **Aplicar padrão e restaurar backup**, com botão para aplicar diretamente o mesmo padrão automático às filas marcadas. Nenhuma captura, impressora de exemplo ou importação de perfil é necessária. Restaurar backup continua uma ação explícita para desfazer ajustes anteriores na mesma fila/PC. Relatórios de falha agora incluem a pilha e o código da exceção. Teste físico de impressão permanece pendente.
 
 Referências: [GetForm](https://learn.microsoft.com/en-us/windows/win32/printdocs/getform), [AddForm](https://learn.microsoft.com/en-us/windows/win32/printdocs/addform), [códigos Win32](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--1700-3999-).
+
+
+## 0.5.6 — Normalização real do papel personalizado Elgin
+
+O relatório0.5.5 ultrapassou o cadastro de papel e falhou na conferência após DocumentProperties. Reproduzido com a rotina de merge da DLL original, em memória isolada: ela mantém72×100mm/corte/logo, mas usa DMPAPER_USER256, zera o primeiro WCHAR do nome de formulário e retira os bits de dimensões explícitas. A conferência agora aceita essa representação e interpreta o nome até o primeiro NUL; continua exigindo dimensões exatas, orientação, mono/simplex e todos os campos corte/logo. Não aceita outro papel/tamanho nem mascara alterações privadas. Erros mostram todos os valores observados. Testes incluem regressão da representação normalizada e rejeição de cada ajuste divergente. Teste físico noPC continua necessário.
