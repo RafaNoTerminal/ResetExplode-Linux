@@ -36,6 +36,8 @@ static class Program
                 using (var elgin = new ElginSetupDialog([], [], _ => { }, collectOnShow: false)) {
                     elgin.Show(form); Application.DoEvents(); elgin.VerifyUi();
                     if (args.Length >= 2) { using var shot = new Bitmap(elgin.Width, elgin.Height); elgin.DrawToBitmap(shot, new Rectangle(Point.Empty, elgin.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-elgin.png")); }
+                    elgin.ShowRestorePage();
+                    if (args.Length >= 2) { using var shot = new Bitmap(elgin.Width, elgin.Height); elgin.DrawToBitmap(shot, new Rectangle(Point.Empty, elgin.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-elgin-restauracao.png")); }
                     elgin.Close();
                 }
                 if (!inventory.Any(x => x.Grupo == "CPU" && x.Campo == "Modelo")) throw new Exception("CPU ausente no inventário.");

@@ -95,21 +95,20 @@ internal sealed class ElginPreferences : IDisposable
     void EnsureReceiptForm(byte[] mode) {
         string formName = Encoding.Unicode.GetString(mode, 102, 64).TrimEnd('\0');
         if (!formName.Equals("Comprovantes", StringComparison.OrdinalIgnoreCase)) return;
-        IntPtr existing = IntPtr.Zero;
-        try {
-            try { existing = Buffer((IntPtr p, uint size, out uint needed) => GetForm(handle, formName, 1, p, size, out needed)); }
-            catch (Win32Exception e) when (e.NativeErrorCode is 1802 or 2) { }
-            if (existing != IntPtr.Zero) {
-                var form = Marshal.PtrToStructure<FormInfo1>(existing);
-                if (form.Width != 72000 || form.Height != 100000) throw new IOException("Já existe papel Comprovantes com tamanho diferente. O formato existente foi preservado; confira o gerenciador de papel.");
-                return;
-            }
+        ReceiptPaperForm.Ensure(() => {
+            var buffer = Buffer((IntPtr p, uint size, out uint needed) => GetForm(handle, formName, 1, p, size, out needed));
+            try { var form = Marshal.PtrToStructure<FormInfo1>(buffer); return (form.Width, form.Height); }
+            finally { Marshal.FreeHGlobal(buffer); }
+        }, () => {
             var name = Marshal.StringToHGlobalUni(formName);
             try {
                 var form = new FormInfo1 { Name = name, Width = 72000, Height = 100000, Right = 72000, Bottom = 100000 };
-                if (!AddForm(handle, 1, ref form)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Não foi possível cadastrar papel Comprovantes 72×100 mm. Configure o papel no driver e capture novamente.");
+                if (!AddForm(handle, 1, ref form)) {
+                    int error = Marshal.GetLastWin32Error();
+                    throw new Win32Exception(error, "AddFormW: não foi possível criar automaticamente o papel Comprovantes 72×100 mm. Win32=" + error);
+                }
             } finally { Marshal.FreeHGlobal(name); }
-        } finally { if (existing != IntPtr.Zero) Marshal.FreeHGlobal(existing); }
+        });
     }
     internal void Restore(string file) {
         var saved = JsonSerializer.Deserialize<ReceiptQueueBackup>(File.ReadAllText(file)) ?? throw new IOException("Backup inválido.");

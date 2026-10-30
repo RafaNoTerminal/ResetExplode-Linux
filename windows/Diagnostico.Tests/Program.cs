@@ -231,6 +231,15 @@ Check(removalScript.IndexOf("Set-Content")<removalScript.IndexOf("Remove-Printer
 await Reject<ArgumentException>(()=>Task.FromResult(PrinterRemoval.Build([],"fixture.json",false)));
 await Reject<ArgumentException>(()=>Task.FromResult(PrinterRemoval.Build([new("Duplicate","d","p",false),new("Duplicate","d","p",false)],"fixture.json",false)));
 Check(LocalPrinterPackage.NativeHelpers.Contains("printui.exe") && LocalPrinterPackage.NativeHelpers.Contains("'/ia'") && !LocalPrinterPackage.NativeHelpers.Contains("'/if'"), "Alternativa Ricoh cria fila antes de registrar driver");
+int formReads=0,formCreates=0;
+ReceiptPaperForm.Ensure(()=>{if(++formReads==1)throw new System.ComponentModel.Win32Exception(1902);return (72000,100000);},()=>formCreates++);
+Check(formReads==2 && formCreates==1,"Papel ausente 1902 não foi criado e relido");
+ReceiptPaperForm.Ensure(()=>(72000,100000),()=>throw new Exception("Não recriar papel existente"));
+Check(true,"Papel existente não preservado");
+await Reject<IOException>(()=>{ReceiptPaperForm.Ensure(()=>(80000,100000),()=>throw new Exception("Não sobrescrever"));return Task.CompletedTask;});
+await Reject<System.ComponentModel.Win32Exception>(()=>{ReceiptPaperForm.Ensure(()=>throw new System.ComponentModel.Win32Exception(5),()=>throw new Exception("Não criar após acesso negado"));return Task.CompletedTask;});
+await Reject<System.ComponentModel.Win32Exception>(()=>{ReceiptPaperForm.Ensure(()=>throw new System.ComponentModel.Win32Exception(1902),()=>throw new System.ComponentModel.Win32Exception(5));return Task.CompletedTask;});
+await Reject<System.ComponentModel.Win32Exception>(()=>{ReceiptPaperForm.Ensure(()=>throw new System.ComponentModel.Win32Exception(1902),()=>{});return Task.CompletedTask;});
 Console.WriteLine($"Total final: {passed} verificações aprovadas.");
 
 sealed class FixtureHandler : HttpMessageHandler

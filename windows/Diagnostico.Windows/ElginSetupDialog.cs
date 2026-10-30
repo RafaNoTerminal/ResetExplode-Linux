@@ -3,14 +3,12 @@ namespace Diagnostico.Windows;
 
 internal sealed class ElginSetupDialog : Form
 {
-    internal const string Guide = "PAPEL\r\nCrie/selecione o papel Comprovantes: largura 72,0 mm e comprimento 100,0 mm.\r\n\r\nCONFIGURAÇÕES AVANÇADAS → PAPEL CORTADO\r\nTempo: Fim da página.\r\nModo: Papel parcialmente cortado.\r\nDistância: 0,0 mm.\r\n\r\nCONFIGURAÇÕES AVANÇADAS → IMPRESSÃO DO LOGOTIPO\r\nTempo: Início da página.\r\nEscolha: Logo salvo com impressora.\r\nLocalização: Meio (centralizado).\r\nCódigo chave: 0 / 0 (48 / 48 aparece acima na referência).\r\nConfirme OK em todas as janelas.\r\n\r\nO logotipo deve estar gravado na memória de CADA impressora física. O perfil copia as preferências do driver; não grava a imagem na impressora. Use o utilitário Elgin com o arquivo logo novo rbt.png, sem atualizar firmware.\r\n\r\nO modelo será aplicado como padrão global (novos usuários) e na conta que executa o RBT. Se o administrador for outra conta, preferências já personalizadas do colaborador precisam de conferência no perfil dele.\r\n\r\nCapture uma vez e reaplique nas filas/PCs com o mesmo driver. Faça teste físico de um comprovante para conferir corte e logotipo.";
     readonly CheckedListBox queues = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false, HorizontalScrollbar = true };
-    readonly ComboBox sourceQueue = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 380 };
     readonly TextBox output = new() { Dock = DockStyle.Bottom, Height = 135, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
     readonly Label state = new() { Dock = DockStyle.Bottom, Height = 44, Text = "Instale o driver, marque as unidades e clique em Adicionar e configurar automaticamente. Nenhum modelo manual é necessário." };
     readonly List<Button> operations = [];
     readonly Action<TestResult> record; readonly bool queryOnShow;
-    bool busy; ReceiptProfile? profile;
+    bool busy;
     internal ElginSetupDialog(CompanyPrinter[] printers, CompanyPrinter[] selected, Action<TestResult> recordResult, bool collectOnShow = true) {
         record = recordResult; queryOnShow = collectOnShow;
         Text = "Comprovantes Elgin i9 · driver, corte e logotipo"; Size = new Size(1040, 790); MinimumSize = new Size(900, 680); StartPosition = FormStartPosition.CenterParent;
@@ -43,30 +41,14 @@ internal sealed class ElginSetupDialog : Form
         var configure = new TabPage("2 · Ajustes automáticos");
         var guide = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Text = "AJUSTE AUTOMÁTICO — SEM MODELO MANUAL\r\n\r\n" + ElginReceiptPreset.Description + "\r\n\r\nUse Aplicar automaticamente às filas marcadas para ajustar filas que já estão instaladas. Na primeira aba, Adicionar e configurar automaticamente faz as duas etapas em sequência.\r\n\r\nCompatível com o driver Elgin 1.8.0 x64 fornecido. O app confere os arquivos do driver, salva backup completo e relê todos os valores. Não é necessário abrir as preferências nem capturar um modelo.\r\n\r\nA imagem do logo precisa estar gravada na memória física de cada impressora. O app aplica a seleção do logo salvo; a gravação da imagem pelo utilitário é uma etapa separada, caso ainda não exista.\r\n\r\nFaça teste físico de um comprovante para conferir o resultado." };
         var modelActions = Row(configure, DockStyle.Bottom); modelActions.Height = 90; modelActions.WrapContents = true;
-        Add(modelActions, "Aplicar automaticamente às filas marcadas", () => _ = Operate(async () => {
-            var chosen = Selected(); if (chosen.Length == 0) throw new IOException("Marque as filas desejadas na primeira aba.");
-            if (MessageBox.Show(this, ElginReceiptPreset.Description + "\r\n\r\nAplicar com backup às filas marcadas? Não exige configuração manual de modelo.", Text, MessageBoxButtons.OKCancel) != DialogResult.OK) return null;
-            return await ElginSetupService.ApplyAutomatic(chosen);
-        }));
+        Add(modelActions, "Aplicar automaticamente às filas marcadas", () => _ = Operate(ApplyAutomaticSelection));
         Add(modelActions, "Instalar utilitário Elgin", () => Install(true));
         Add(modelActions, "Logo e imagens de referência", () => { if (!busy) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ElginSetupService.Materials) { UseShellExecute = true }); });
         configure.Controls.Add(guide); configure.Controls.Add(modelActions);
-        var apply = new TabPage("3 · Perfis e restauração (opcional)");
-        var explanation = new Label { Dock = DockStyle.Top, Height = 140, Text = "A configuração automática das abas anteriores NÃO exige fila modelo nem captura. Esta aba mantém, como alternativas opcionais, perfis personalizados capturados em versões anteriores e restauração de backups completos.\r\n\r\nPara capturar uma configuração diferente do padrão automático, escolha uma fila abaixo. Perfis personalizados só podem ser transferidos com o mesmo driver. A imagem física do logotipo não é copiada pelo perfil. Padrão global para novos usuários e conta executando o RBT; preferências antigas de outras contas precisam de conferir no perfil do colaborador." };
-        var applyActions = Row(apply, DockStyle.Top); applyActions.Height = 170; applyActions.WrapContents = true;
-        applyActions.Controls.Add(sourceQueue);
-        Add(applyActions, "Capturar modelo personalizado (opcional)", () => _ = Operate(CaptureModel));
-        Add(applyActions, "Aplicar perfil personalizado", () => _ = Operate(async () => {
-            profile ??= ElginSetupService.LoadProfile(); var chosen = Selected(); if (chosen.Length == 0) throw new IOException("Marque filas na aba Driver e filas.");
-            if (MessageBox.Show(this, "Aplicar o modelo completo de papel/corte/logotipo nas filas marcadas?\r\n\r\n" + string.Join("\r\n", chosen.Select(p => p.Name)) + "\r\n\r\nSalva backup, mantém destino/padrão e confere os dados do driver. Teste de impressão continua necessário.", Text, MessageBoxButtons.OKCancel) != DialogResult.OK) return null;
-            return await ElginSetupService.Apply(profile, chosen);
-        }));
-        Add(applyActions, "Importar perfil de outro PC", () => _ = Operate(() => {
-            using var pick = new OpenFileDialog { Filter = "Perfil completo RBT|*.rbt-profile.json", InitialDirectory = Path.GetDirectoryName(ElginSetupService.ProfileFile) };
-            if (pick.ShowDialog(this) != DialogResult.OK) return Task.FromResult<TestResult?>(null);
-            profile = ElginSetupService.LoadProfile(pick.FileName); ElginSetupService.SaveProfile(profile);
-            return Task.FromResult<TestResult?>(TestResult.Done("Importar perfil completo", ("Resultado", "Perfil carregado; nenhuma fila alterada. Compatibilidade será conferida ao aplicar.")));
-        }));
+        var apply = new TabPage("3 · Aplicar padrão e restaurar backup");
+        var explanation = new Label { Dock = DockStyle.Top, Height = 140, Text = "Aplique diretamente o padrão de comprovantes às filas marcadas: papel 72×100 mm, corte parcial no fim da página/0 mm e logo salvo no início/Meio/chave 0/0. Não precisa de impressora de exemplo, captura ou arquivo de perfil.\r\n\r\nRestaurar backup é apenas para desfazer um ajuste anterior neste mesmo PC e fila. Nesse caso, escolha o backup salvo pelo RBT, sem criar modelo." };
+        var applyActions = Row(apply, DockStyle.Top); applyActions.Height = 110; applyActions.WrapContents = true;
+        Add(applyActions, "Aplicar padrão automático às filas marcadas", () => _ = Operate(ApplyAutomaticSelection));
         Add(applyActions, "Restaurar backup completo", () => _ = Operate(async () => {
             using var pick = new OpenFileDialog { Filter = "Backup completo de preferências|elgin-completo-*.json", InitialDirectory = Automation.BackupDirectory };
             if (pick.ShowDialog(this) != DialogResult.OK) return null;
@@ -103,11 +85,9 @@ internal sealed class ElginSetupDialog : Form
     }
     async Task<TestResult?> RefreshInventory() {
         using var data = await CompanyService.Script(PrinterScripts.Inventory, CancellationToken.None);
-        string? selected = sourceQueue.SelectedItem as string; sourceQueue.Items.Clear();
-        foreach (var p in data.RootElement.GetProperty("Printers").EnumerateArray()) if (p.GetProperty("DriverName").GetString() == ElginSetupService.DriverName) sourceQueue.Items.Add(p.GetProperty("Name").GetString()!);
-        if (sourceQueue.Items.Count > 0) sourceQueue.SelectedIndex = selected is not null && sourceQueue.Items.Contains(selected) ? sourceQueue.Items.IndexOf(selected) : 0;
+        int queueCount = data.RootElement.GetProperty("Printers").EnumerateArray().Count(p => p.GetProperty("DriverName").GetString() == ElginSetupService.DriverName);
         bool driver = data.RootElement.GetProperty("Drivers").EnumerateArray().Any(d => d.GetProperty("Name").GetString() == ElginSetupService.DriverName);
-        return TestResult.Done("Inventário Elgin", ("Driver instalado", driver), ("Filas Elgin disponíveis", sourceQueue.Items.Count), ("Próximo passo", driver ? "Adicione as filas desejadas ou configure uma fila modelo." : "Instale o driver Elgin antes de adicionar filas."));
+        return TestResult.Done("Inventário Elgin", ("Driver instalado", driver), ("Filas Elgin disponíveis", queueCount), ("Próximo passo", driver ? "Marque as filas e aplique os ajustes automáticos diretamente." : "Instale o driver Elgin antes de adicionar filas."));
     }
     void Install(bool utility) {
         if (busy) return;
@@ -115,22 +95,17 @@ internal sealed class ElginSetupDialog : Form
         if (MessageBox.Show(this, "Executar o instalador original fornecido no pendrive?\r\n\r\n" + file + "\r\n\r\nEste EXE antigo não tem assinatura Authenticode. O app confere o SHA256 exato do arquivo fornecido antes de abrir. Siga o instalador e preserve as impressoras existentes. Pode solicitar reinício; faça manualmente.\r\n\r\n" + (utility ? "Use o utilitário para gravar o logotipo na impressora correta; não é preciso atualizar firmware." : "Instale o modelo ELGIN i9(USB) no computador. Depois atualize o inventário e adicione as filas."), Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
         _ = Operate(async () => { var result = await ElginSetupService.InstallOriginal(utility); if (!utility) await RefreshInventory(); return result; });
     }
-    async Task<TestResult?> CaptureModel() {
-        if (sourceQueue.SelectedItem is not string name) throw new IOException("Atualize o inventário e escolha uma fila Elgin instalada para servir de modelo.");
-        await ElginSetupService.CheckQueue(name);
-        using var native = new ElginPreferences(name);
-        string backup = native.Backup(Automation.BackupDirectory);
-        var mode = native.Edit(Handle); if (mode is null) return null;
-        if (MessageBox.Show(this, "Você conferiu nesta fila os ajustes do guia?\r\n\r\n• Papel Comprovantes 72×100 mm\r\n• Fim da página / corte parcial / 0 mm\r\n• Início da página / logo salvo / Meio / chave 0 e 0\r\n\r\nO app captura os dados completos do driver, mas não interpreta os campos proprietários visualmente. Só confirme após conferir as opções.\r\n\r\nSalvar modelo e aplicar estas preferências à fila " + name + "?", Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.OK) return null;
-        profile = new(1, native.Driver, native.Fingerprint, mode, true, DateTimeOffset.Now);
-        await ElginSetupService.CheckQueue(name);
-        string appliedBackup = native.Apply(profile, Automation.BackupDirectory); ElginSetupService.SaveProfile(profile);
-        return TestResult.Done("Capturar modelo completo Elgin", ("Fila modelo", name), ("Perfil salvo", ElginSetupService.ProfileFile), ("Backup anterior à janela", backup), ("Backup anterior à aplicação", appliedBackup), ("Conferência", "Ajustes do guia declarados conferidos pelo técnico. Preferências completas aplicadas e relidas. Teste físico e logo na memória da impressora ainda precisam de conferência."));
+    async Task<TestResult?> ApplyAutomaticSelection() {
+        var chosen = Selected();
+        if (chosen.Length == 0) { ((TabControl)Controls.OfType<TabControl>().Single()).SelectedIndex = 0; throw new IOException("Marque as unidades desejadas na lista. Não é preciso escolher uma impressora modelo."); }
+        if (MessageBox.Show(this, ElginReceiptPreset.Description + "\r\n\r\nAplicar diretamente com backup às filas marcadas? Não exige modelo nem perfil de exemplo.", Text, MessageBoxButtons.OKCancel) != DialogResult.OK) return null;
+        return await ElginSetupService.ApplyAutomatic(chosen);
     }
+    internal void ShowRestorePage() { ((TabControl)Controls.OfType<TabControl>().Single()).SelectedIndex = 2; Application.DoEvents(); }
     internal void VerifyUi() {
-        if (operations.Count != 12 || !Guide.Contains("Papel parcialmente cortado") || !Guide.Contains("Logo salvo com impressora") || !Guide.Contains("0 / 0")) throw new Exception("Fluxo automático/restauração ou guia de corte/logo ausente.");
+        if (operations.Count != 10) throw new Exception("Fluxo automático/restauração ou guia de corte/logo ausente.");
         if (!operations.Any(b => b.Text == "2 · Adicionar e configurar automaticamente") || !operations.Any(b => b.Text == "Aplicar automaticamente às filas marcadas")) throw new Exception("Ação automática sem modelo manual ausente.");
         ((TabControl)Controls.OfType<TabControl>().Single()).SelectedIndex = 1; Application.DoEvents();
-        if (sourceQueue.Items.Count != 0 || busy) throw new Exception("Fixture iniciou consulta/instalador ou acessou driver real.");
+        if (operations.Any(b => b.Text.Contains("Capturar") || b.Text.Contains("Importar perfil")) || !operations.Any(b => b.Text == "Aplicar padrão automático às filas marcadas") || busy) throw new Exception("Fixture iniciou consulta/instalador ou acessou driver real.");
     }
 }

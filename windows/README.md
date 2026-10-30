@@ -1,4 +1,4 @@
-# RBT Diagnóstico · Windows 0.5.4
+# RBT Diagnóstico · Windows 0.5.5
 
 **0.5.2: comprovantes automáticos, sem primeira configuração manual.** Em Impressoras/empresa → Comprovantes: driver e perfil, instale o driver Elgin fornecido, marque as unidades e clique **Adicionar e configurar automaticamente**. Para filas já instaladas, use **Ajustes automáticos → Aplicar automaticamente às filas marcadas**. Papel72×100mm, corte parcial no fim da página/0mm e logo salvo no início da página/Meio/chave0/0 são escritos e relidos pelo app; não exige capturar modelo. A imagem física do logo deve estar gravada na impressora (seleção automática do logo não grava a imagem). O fluxo de modelo manual descrito no histórico0.5.1 passou a ser uma alternativa opcional.
 
@@ -169,3 +169,12 @@ O erro Elgin do mesmo relatório foi criação de filas com o driver ausente (o 
 **Marcar todas / Desmarcar todas** estão na lista principal (somente filas visíveis no filtro), nos fluxosRicoh/Elgin e na lista de exclusão. **Excluir impressoras…** consulta as filas realmente instaladas/visíveis na conta doRBT, separadas do catálogo. Nada vem marcado automaticamente. Exige revisar a lista exata e marcar a confirmação; se inclui padrão, informa que oWindows poderá escolher outro. Salva inventário e ticket quando exposto, revalida nome/driver/porta, verifica trabalhos e remove somente o objeto exato selecionado (`Remove-Printer -InputObject`, sem expansão de curingas). Não remove driver/porta, não cancela jobs, não remove automaticamente para consertar instalações. Fila alterada desde a seleção ou com jobs detectados é preservada. Confere ausência depois e mostra falhas por fila. O backup não inclui todos os dados privados de qualquer fabricante nem oferece restauração automática integral.
 
 Testes do CI removem apenas objetos simulados; não excluem impressoras reais. Testes adicionais cobrem fallbackCIM→PrintUI (recuperado, erro, retornozero sem registro, reinício), dependênciaElgin, seleção em lote, exclusão exata com nome literal, jobs, identidade divergente, ausente e proteção do padrão. Impressão real e o caminho alternativo noPC de campo ainda precisam de confirmação.
+
+
+## 0.5.5 — Papel Comprovantes ausente e aplicação direta
+
+O relatório de campo 0.5.4 confirmou instalação do driver Elgin e das filas, mas o ajuste falhou com “O nome do formulário especificado é inválido”. A consulta GetForm devolvia ERROR_INVALID_FORM_NAME (1902) para papel ainda não cadastrado; o tratamento anterior não incluía esse código e parava antes de AddForm. Agora cria automaticamente o papel ausente e relê suas dimensões antes de continuar; preserva formatos existentes e recusa tamanho diferente. Erros de acesso não são tratados como ausência. Os testes de regressão simulam o erro 1902, papel existente, tamanho incorreto, acesso negado, falha ao criar e falha na releitura.
+
+A antiga tela de perfis foi substituída por **Aplicar padrão e restaurar backup**, com botão para aplicar diretamente o mesmo padrão automático às filas marcadas. Nenhuma captura, impressora de exemplo ou importação de perfil é necessária. Restaurar backup continua uma ação explícita para desfazer ajustes anteriores na mesma fila/PC. Relatórios de falha agora incluem a pilha e o código da exceção. Teste físico de impressão permanece pendente.
+
+Referências: [GetForm](https://learn.microsoft.com/en-us/windows/win32/printdocs/getform), [AddForm](https://learn.microsoft.com/en-us/windows/win32/printdocs/addform), [códigos Win32](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--1700-3999-).

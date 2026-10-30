@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <AssemblyName>RBT-Diagnostico</AssemblyName><Product>RBT Diagnóstico</Product><Company>RafaNoTerminal</Company><Version>0.5.4</Version>
+    <AssemblyName>RBT-Diagnostico</AssemblyName><Product>RBT Diagnóstico</Product><Company>RafaNoTerminal</Company><Version>0.5.5</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest><PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Diagnostico.Core/Diagnostico.Core.csproj"/><PackageReference Include="System.Management" Version="10.0.2"/><PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6"/></ItemGroup>

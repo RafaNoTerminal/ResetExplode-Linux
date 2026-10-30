@@ -55,7 +55,7 @@ internal static class ElginSetupService
                     return file;
                 });
                 rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Padrão global e conta executando o RBT", "Aplicado", ElginReceiptPreset.Description + " Valores relidos e conferidos no driver; sem captura de modelo. Backup=" + backup + ". Impressão física e presença do logo na memória da impressora precisam de conferência."));
-            } catch (Exception e) { rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Fila selecionada", "Erro", e.Message)); }
+            } catch (Exception e) { rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Fila selecionada", "Erro", e.ToString())); }
         }
         return new("Comprovantes · ajuste automático", rows.Any(r => r.Failed) ? "Concluído com falhas" : "Ajustes aplicados; impressão física pendente", new() { ["Etapas"] = rows.ToArray(), ["Limite"] = "Não é preciso configurar/capturar modelo manual. A imagem do logotipo deve já estar gravada na impressora; selecionar logo não envia a imagem. Nenhum firmware enviado." }, DateTimeOffset.Now);
     }
@@ -75,7 +75,7 @@ internal static class ElginSetupService
                 await CheckQueue(printer.Name, printer);
                 string backup = await Task.Run(() => { using var preferences = new ElginPreferences(printer.Name); return preferences.Apply(profile, Automation.BackupDirectory); });
                 rows.Add(new("Aplicar perfil completo Elgin", printer.Name, "Padrão global e conta executando o RBT", "Aplicado", "DEVMODE completo relido e conferido, incluindo dados privados do driver. Papel/corte/logo do modelo conferidos manualmente ao capturar. Backup=" + backup + ". Logo gravado na memória física da impressora e impressão real precisam de conferência. Preferências antigas de outros usuários existentes podem prevalecer no perfil deles."));
-            } catch (Exception e) { rows.Add(new("Aplicar perfil completo Elgin", printer.Name, "Fila selecionada", "Erro", e.Message)); }
+            } catch (Exception e) { rows.Add(new("Aplicar perfil completo Elgin", printer.Name, "Fila selecionada", "Erro", e.ToString())); }
         }
         return new("Perfil completo de comprovantes", rows.Any(r => r.Failed) ? "Concluído com falhas" : "Perfil aplicado; teste físico pendente", new() { ["Etapas"] = rows.ToArray(), ["Limite"] = "Não envia imagem à memória da impressora, não altera porta/nome/compartilhamento/padrão nem apaga trabalhos. Sem afirmação de impressão física aprovada." }, DateTimeOffset.Now);
     }
