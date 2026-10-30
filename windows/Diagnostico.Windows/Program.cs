@@ -21,7 +21,7 @@ static class Program
                 MaintenanceSmoke.Verify();
                 CompanySmoke.Verify();
                 RegressionSmoke.Verify();
-                RicohSmoke.Verify();
+                RicohSmoke.Verify(); ElginBackupSmoke.Verify();
                 PrinterSelectionButtons.Verify(); PrinterRemovalSmoke.Verify();
                 using (var removal = new PrinterRemovalDialog(_ => { }, collectOnShow: false)) {
                     removal.Show(form); Application.DoEvents(); removal.VerifyUi();
