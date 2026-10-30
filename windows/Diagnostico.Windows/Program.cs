@@ -21,6 +21,11 @@ static class Program
                 MaintenanceSmoke.Verify();
                 CompanySmoke.Verify();
                 RegressionSmoke.Verify();
+                using (var elgin = new ElginSetupDialog([], [], _ => { }, collectOnShow: false)) {
+                    elgin.Show(form); Application.DoEvents(); elgin.VerifyUi();
+                    if (args.Length >= 2) { using var shot = new Bitmap(elgin.Width, elgin.Height); elgin.DrawToBitmap(shot, new Rectangle(Point.Empty, elgin.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-elgin.png")); }
+                    elgin.Close();
+                }
                 if (!inventory.Any(x => x.Grupo == "CPU" && x.Campo == "Modelo")) throw new Exception("CPU ausente no inventário.");
                 if (Inventory.Memory().Total <= 0 || Inventory.Processes().Count == 0) throw new Exception("Coleta Windows falhou.");
                 Automation.VerifyRegistryCodec();

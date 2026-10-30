@@ -170,6 +170,26 @@ var receipt = new CompanyPrinter("TST", "TST_IMP_Comprovantes", "192.0.2.22", Re
 await Reject<ArgumentException>(() => Task.FromResult(PrinterScripts.Install([receipt], "Ricoh driver")));
 Check(PrinterScripts.Install([receipt], "ELGIN i9").Contains("Add-Printer"), "Driver Elgin correto rejeitado");
 Check(PrinterScripts.ConfigureReceipts([receipt], "fixture").Contains("72000"), "Preferências de comprovante ausentes");
+// Opaque driver preferences must retain every proprietary byte, across queue names.
+byte[] devMode = new byte[228];
+System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(devMode.AsSpan(68), 220);
+System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(devMode.AsSpan(70), 8);
+devMode[220] = 0x51; devMode[227] = 0x9A;
+var receiptModel = new ReceiptProfile(1, "ELGIN i9(USB)", new string('a', 64), devMode, true, DateTimeOffset.Now); receiptModel.Validate();
+var queueMode = ReceiptProfile.ForQueue(devMode, "TST_IMP_Comprovantes");
+Check(ReceiptProfile.SameSettings(devMode, queueMode) && devMode[0] == 0 && queueMode[0] != 0, "Transferência perdeu preferências privadas ou mudou origem");
+Check(queueMode.AsSpan(220).SequenceEqual(devMode.AsSpan(220)), "Dados privados de corte/logo foram truncados");
+await Reject<ArgumentException>(() => Task.Run(() => receiptModel.Compatible("ELGIN i9(USB)", new string('b', 64))));
+await Reject<ArgumentException>(() => Task.Run(() => (receiptModel with { ConfirmedByTechnician = false }).Validate()));
+await Reject<ArgumentException>(() => Task.Run(() => ReceiptProfile.ValidateMode(devMode[..225])));
+byte[]? savedGlobal = null, savedUser = null; bool restored = false;
+ReceiptPreferenceTransaction.Apply(queueMode, level => level == 8 ? savedGlobal : savedUser, (level, mode) => { if(level == 8) savedGlobal = mode; else savedUser = mode; }, () => restored = true);
+Check(!restored && ReceiptProfile.SameSettings(savedGlobal!, queueMode) && ReceiptProfile.SameSettings(savedUser!, queueMode), "Preferências globais/usuário não foram conferidas");
+await Reject<IOException>(() => Task.Run(() => ReceiptPreferenceTransaction.Apply(queueMode, level => level == 8 ? savedGlobal : savedUser, (level, mode) => { if(level == 8) savedGlobal = mode; else throw new IOException("fixture per-user write failed"); }, () => { savedGlobal = devMode; restored = true; })));
+Check(restored && ReferenceEquals(savedGlobal, devMode), "Falha parcial não restaurou estado anterior");
+restored = false;
+await Reject<IOException>(() => Task.Run(() => ReceiptPreferenceTransaction.Apply(queueMode, level => { var changed = (byte[])queueMode.Clone(); changed[227] ^= 1; return changed; }, (level, mode) => { }, () => restored = true)));
+Check(restored, "Driver que não mantém preferências privadas foi aprovado");
 Console.WriteLine($"Total final: {passed} verificações aprovadas.");
 
 sealed class FixtureHandler : HttpMessageHandler

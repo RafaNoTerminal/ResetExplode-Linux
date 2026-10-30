@@ -38,14 +38,11 @@ public sealed partial class MainForm
             _ = Run("Migrar driver Ricoh", async ct => { var result = await CompanyService.ApplyPrinters(PrinterScripts.MigrateRicoh(file), "Migrar driver Ricoh"); result.Dados["Backup"] = file; using var dialog = SetupResultDialog(result); dialog.ShowDialog(this); return result; });
         }, true);
         var receipts = Actions();
-        Button(receipts, "Ajustar comprovantes 72×100", () => {
+        Button(receipts, "Comprovantes: driver e perfil", () => {
             if (task is not null) return;
-            var selected = list.CheckedItems.Cast<CompanyPrinter>().ToArray();
-            if (selected.Length == 0 || selected.Any(p => !p.Receipt)) { MessageBox.Show(this, "Marque somente as filas de comprovantes Elgin i9 já instaladas.", Brand.Name); return; }
-            if (MessageBox.Show(this, "Salvar backup e ajustar papel 72×100 mm, monocromático e frente única nas filas marcadas?\n\n" + string.Join("\n", selected.Select(p => p.Name)) + "\n\nO driver precisa aceitar o formato; o app relê para conferir. Corte parcial depende das preferências Elgin e ainda precisa ser configurado/testado. Sem excluir filas/trabalhos ou trocar padrão.", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-            _ = Run("Ajustar comprovantes", async ct => { var result = await CompanyService.ApplyPrinters(PrinterScripts.ConfigureReceipts(selected, Automation.BackupDirectory), "Comprovantes 72×100"); lastSetupResult = result; using var dialog = SetupResultDialog(result); dialog.ShowDialog(this); return result; });
+            using var dialog = new ElginSetupDialog(company.Printers, list.CheckedItems.Cast<CompanyPrinter>().ToArray(), result => results.Add(result)); dialog.ShowDialog(this);
         }, true);
-        Button(receipts, "Restaurar preferências", () => {
+        Button(receipts, "Restaurar ajuste simples", () => {
             if (task is not null) return; using var pick = new OpenFileDialog { InitialDirectory = Automation.BackupDirectory, Filter = "Backup comprovantes|comprovantes-*.json" }; if (pick.ShowDialog(this) != DialogResult.OK) return; string file = pick.FileName;
             if (MessageBox.Show(this, "Restaurar preferências do backup selecionado na mesma fila/PC?", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
             _ = Run("Restaurar comprovantes", async ct => { var result = await CompanyService.ApplyPrinters(PrinterScripts.RestoreReceipt(file), "Restaurar comprovantes"); using var dialog = SetupResultDialog(result); dialog.ShowDialog(this); return result; });
@@ -77,6 +74,6 @@ public sealed partial class MainForm
         var advanced = Actions();
         Button(advanced, "Mostrar / ocultar rede e domínio", () => { bool show = !network.Visible; foreach (var row in advancedRows) { row.Visible = show; row.Height = show ? 44 : 0; } });
         foreach (var row in content.Controls.OfType<FlowLayoutPanel>().Where(r => !advancedRows.Contains(r))) row.Height = 44;
-        Heading("Impressoras da empresa", "Filas do perfil local, inventário de drivers/portas e instalação com conferência por item. Recepção/Ricoh e comprovantes Elgin i9 (72×100 mm; corte parcial exige conferir o driver). Acesso ao IP não garante impressão; conexão ou driver podem depender da rede/conta da empresa.");
+        Heading("Impressoras da empresa", "Filas do perfil local, inventário de drivers/portas e instalação com conferência por item. Recepção/Ricoh e comprovantes Elgin i9 (72×100 mm, corte parcial e logo via modelo completo do driver). Acesso ao IP não garante impressão; conexão ou driver podem depender da rede/conta da empresa.");
     }
 }
