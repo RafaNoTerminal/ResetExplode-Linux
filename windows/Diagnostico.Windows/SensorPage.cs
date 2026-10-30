@@ -10,7 +10,22 @@ public sealed partial class MainForm
     DataGridView? sensorGrid; Label? sensorNotice; bool onlyTemperatures = true;
     void RenderSensorRows() {
         if (sensorGrid is not { IsDisposed: false }) return;
-        sensorGrid.DataSource = sensorRows.Where(r => !onlyTemperatures || r.Tipo == "Temperature").OrderBy(r => r.Grupo).ThenBy(r => r.Tipo == "Temperature" ? 0 : 1).ThenBy(r => r.Sensor).ToList();
+        var rows = sensorRows.Where(r => !onlyTemperatures || r.Tipo == "Temperature").OrderBy(r => r.Grupo).ThenBy(r => r.Tipo == "Temperature" ? 0 : 1).ThenBy(r => r.Sensor).ToList();
+        // Keep the bound list and its currency manager on each sample: rebinding every two
+        // seconds resets the scroll position and selection while the technician is reading.
+        if (sensorGrid.DataSource is System.ComponentModel.BindingList<SensorRow> current &&
+            current.Select(r => (r.Grupo, r.Tipo, r.Sensor, r.Origem)).SequenceEqual(rows.Select(r => (r.Grupo, r.Tipo, r.Sensor, r.Origem)))) {
+            for (int i = 0; i < rows.Count; i++) if (current[i] != rows[i]) current[i] = rows[i];
+            return;
+        }
+        int first = sensorGrid.FirstDisplayedScrollingRowIndex;
+        string? selected = (sensorGrid.CurrentRow?.DataBoundItem as SensorRow)?.Origem;
+        sensorGrid.DataSource = new System.ComponentModel.BindingList<SensorRow>(rows);
+        if (selected is not null) {
+            int index = rows.FindIndex(r => r.Origem == selected);
+            if (index >= 0) sensorGrid.CurrentCell = sensorGrid.Rows[index].Cells[0];
+        }
+        if (first >= 0 && rows.Count > 0) sensorGrid.FirstDisplayedScrollingRowIndex = Math.Min(first, rows.Count - 1);
     }
     async Task RefreshSensors(bool start = false)
     {

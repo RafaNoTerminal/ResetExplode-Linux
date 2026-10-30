@@ -45,25 +45,80 @@ internal static class TempCleanup
 
 public sealed partial class MainForm
 {
-    string maintenanceLog = ""; List<TempCandidate> cleanupCandidates = [];
+    string maintenanceLog = "Pronto. Escolha uma verificação ou consulte segurança/serviços. Nenhum reparo iniciado.";
+    List<TempCandidate> cleanupCandidates = [];
+    TextBox? maintenanceView; Label? maintenanceStatus; MaintenanceAssessment? maintenanceAssessment;
+    void AppendMaintenance(string text) {
+        maintenanceLog += text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine);
+        if (maintenanceLog.Length > 1048576) maintenanceLog = maintenanceLog[^1048576..];
+        if (maintenanceView is { IsDisposed: false } view) {
+            bool follow = view.SelectionStart >= view.TextLength - 2;
+            int caret = view.SelectionStart; view.Text = maintenanceLog;
+            view.SelectionStart = follow ? view.TextLength : Math.Min(caret, view.TextLength);
+            if (follow) view.ScrollToCaret();
+        }
+    }
+    async Task<TestResult> ExecuteMaintenance(MaintenanceAction item) {
+        DateTime began = DateTime.Now; var watch = Stopwatch.StartNew(); var pending = new StringBuilder();
+        maintenanceLog = ""; AppendMaintenance($"[{began:T}] Iniciando: {item.Title}\r\n{item.File} {string.Join(" ", item.Arguments)}\r\nAguardando saída do Windows…\r\n");
+        using var pulse = new System.Windows.Forms.Timer { Interval = 250 };
+        void Flush() {
+            if (pending.Length > 0) { string text = pending.ToString(); pending.Clear(); AppendMaintenance(text); }
+            string state = item.Title + " · em execução há " + watch.Elapsed.ToString(@"mm\:ss") + " · aguardando o Windows";
+            status.Text = state; if (maintenanceStatus is { IsDisposed: false }) maintenanceStatus.Text = state;
+        }
+        pulse.Tick += (_, _) => Flush(); pulse.Start();
+        MaintenanceExecution output;
+        try { output = await MaintenanceRunner.Execute(item, text => pending.Append(text)); Flush(); }
+        catch (Exception e) {
+            maintenanceAssessment = new("Execução não concluída", e.Message, []);
+            AppendMaintenance("\r\nErro: " + e.Message + "\r\n");
+            if (maintenanceStatus is { IsDisposed: false }) maintenanceStatus.Text = "Execução não concluída: " + e.Message;
+            throw;
+        }
+        finally { pulse.Stop(); }
+        maintenanceAssessment = MaintenanceAssessment.Read(item.Id, output.Code, output.Output + "\n" + output.Error);
+        string cbs = item.Id.StartsWith("sfc") ? await Task.Run(() => MaintenanceRunner.CurrentCbs(began)) : @"Consulte C:\Windows\Logs\DISM\dism.log para os detalhes do DISM.";
+        string summary = maintenanceAssessment.State + " — " + maintenanceAssessment.Detail;
+        AppendMaintenance("\r\n\r\n" + summary + $"\r\nRetorno: {output.Code} (0x{unchecked((uint)output.Code):X8})\r\n" + cbs + "\r\n");
+        if (maintenanceStatus is { IsDisposed: false }) maintenanceStatus.Text = summary;
+        return new(item.Title, maintenanceAssessment.State, new() { ["Retorno"] = output.Code, ["Saída"] = output.Output, ["Erros"] = output.Error, ["Diagnóstico"] = maintenanceAssessment.Detail, ["Detalhes do log"] = cbs, ["Correções sugeridas"] = maintenanceAssessment.Suggested, ["Reinício"] = "Somente manual", ["Limite"] = "Windows repara conjuntos de arquivos; não permite escolher arquivos individuais neste fluxo." }, DateTimeOffset.Now);
+    }
+    void ReviewMaintenanceRepairs() {
+        if (task is not null) return;
+        using var dialog = new Form { Text = "Revisar e escolher correções", Size = new Size(830, 560), StartPosition = FormStartPosition.CenterParent, BackColor = Background, ForeColor = Ink };
+        var info = new TextBox { Dock = DockStyle.Top, Height = 165, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Text = (maintenanceAssessment?.State + "\r\n" + maintenanceAssessment?.Detail).Trim() + "\r\n\r\nEscolha as etapas desejadas. DISM repara a imagem (pode usar Windows Update/WSUS); SFC repara arquivos protegidos em conjunto. Os arquivos individuais ficam no CBS e não podem ser escolhidos pelo SFC. Depois será feita nova verificação SFC. O computador não reinicia automaticamente." };
+        var choices = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, BackColor = Surface, ForeColor = Ink };
+        foreach (string id in new[] { "dism-repair", "sfc-repair" }) choices.Items.Add(MaintenanceCatalog.Get(id), maintenanceAssessment?.Suggested.Contains(id) == true);
+        var apply = new Button { Text = "Executar somente correções marcadas", Dock = DockStyle.Bottom, Height = 46, DialogResult = DialogResult.OK };
+        dialog.Controls.Add(choices); dialog.Controls.Add(info); dialog.Controls.Add(apply);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var selected = choices.CheckedItems.Cast<MaintenanceAction>().ToArray(); if (selected.Length == 0) return;
+        _ = Run("Correções selecionadas", async ct => {
+            var steps = new List<TestResult>();
+            foreach (var item in selected) {
+                var result = await ExecuteMaintenance(item); steps.Add(result); results.Add(result);
+                if (Convert.ToInt32(result.Dados["Retorno"]) != 0) break; // Includes restart pending: do not continue servicing.
+            }
+            if (steps.Count == selected.Length && steps.All(r => Convert.ToInt32(r.Dados["Retorno"]) == 0)) {
+                var verify = await ExecuteMaintenance(MaintenanceCatalog.Get("sfc-verify")); steps.Add(verify); results.Add(verify);
+            }
+            return new TestResult("Correções selecionadas", maintenanceAssessment?.State ?? "Concluído; conferir etapas", new() { ["Resultados"] = steps.ToArray(), ["Alterações"] = "Apenas as etapas marcadas; verificação final somente leitura." }, DateTimeOffset.Now);
+        });
+    }
     void BuildMaintenance()
     {
-        var log = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, BackColor = Surface, ForeColor = Ink, Font = new Font("Consolas", 10), Text = maintenanceLog }; content.Controls.Add(log);
-        var actions = Actions(); var choices = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 430 }; choices.Items.AddRange(MaintenanceCatalog.All); choices.SelectedIndex = 0; actions.Controls.Add(choices);
-        Button(actions, "Executar seleção", () => {
+        var log = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, BackColor = Surface, ForeColor = Ink, Font = new Font("Consolas", 10), Text = maintenanceLog }; content.Controls.Add(log); maintenanceView = log;
+        maintenanceStatus = new Label { Dock = DockStyle.Top, Height = 65, ForeColor = Accent, Text = maintenanceAssessment is null ? "Pronto para verificar. O andamento aparece desde o início da execução." : maintenanceAssessment.State + " — " + maintenanceAssessment.Detail }; content.Controls.Add(maintenanceStatus);
+        var actions = Actions(); var choices = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 370 }; choices.Items.AddRange(MaintenanceCatalog.All); choices.SelectedIndex = 0; actions.Controls.Add(choices);
+        Button(actions, "Executar seleção", async () => {
             if (task is not null || choices.SelectedItem is not MaintenanceAction item) return;
             if (MessageBox.Show(this, item.Title + "\n\n" + item.Effect + "\n\nExecutar no Windows atual?", Brand.Name, MessageBoxButtons.OKCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
-            _ = Run(item.Title, async ct => {
-                maintenanceLog = ""; status.Text = item.Title + " · aguarde a conclusão…";
-                var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, item.File)) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-                if (item.UnicodeOutput) start.StandardOutputEncoding = Encoding.Unicode;
-                foreach (var argument in item.Arguments) start.ArgumentList.Add(argument);
-                using var process = Process.Start(start) ?? throw new IOException("Comando não iniciou.");
-                async Task<string> Read(StreamReader reader) { var output = new StringBuilder(); while (await reader.ReadLineAsync() is { } line) { line = ActivationFlow.Clean(line); output.AppendLine(line); maintenanceLog += line + Environment.NewLine; if (maintenanceLog.Length > 1048576) maintenanceLog = maintenanceLog[^1048576..]; if (!log.IsDisposed) { log.Text = maintenanceLog; log.SelectionStart = log.TextLength; log.ScrollToCaret(); } } return output.ToString(); }
-                var stdout = Read(process.StandardOutput); var stderr = Read(process.StandardError); await process.WaitForExitAsync();
-                return new(item.Title, process.ExitCode is 0 or 3010 ? "Comando concluiu; conferir diagnóstico" : "Falha no comando", new() { ["Retorno"] = process.ExitCode, ["Saída"] = await stdout, ["Erros"] = await stderr, ["Observação"] = "Código de saída não é aprovação geral do PC. Interprete a saída e reteste; reinício somente manual." }, DateTimeOffset.Now);
-            });
+            await Run(item.Title, ct => ExecuteMaintenance(item));
+            if (!closing && maintenanceAssessment?.Suggested.Length > 0) ReviewMaintenanceRepairs();
         }, true);
+        var repair = Actions(); Button(repair, "Revisar / escolher correções", ReviewMaintenanceRepairs, true);
+        Button(repair, "Abrir logs CBS / DISM", () => OpenLink(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Logs")));
         var cleanup = Actions();
         Button(cleanup, "Prévia de temporários", () => _ = Run("Prévia de limpeza", async ct => { cleanupCandidates = await Task.Run(() => TempCleanup.Preview(), ct); maintenanceLog = $"{cleanupCandidates.Count} arquivos com mais de7dias · {cleanupCandidates.Sum(f => f.Bytes) / 1048576.0:N1} MiB\r\n" + string.Join("\r\n", cleanupCandidates.Take(500).Select(f => f.Path)); if (!log.IsDisposed) log.Text = maintenanceLog; return TestResult.Done("Prévia de temporários", ("Arquivos candidatos", cleanupCandidates.Count), ("MiB", cleanupCandidates.Sum(f => f.Bytes) / 1048576.0), ("Alterações", "Nenhuma")); }), true);
         Button(cleanup, "Limpar somente a prévia", () => {
@@ -73,11 +128,12 @@ public sealed partial class MainForm
         }, true);
         var diagnostics = Actions();
         Button(diagnostics, "Segurança / serviços / inicialização", () => _ = Run("Diagnóstico do Windows", async ct => {
+            maintenanceLog = "Consultando Defender, firewall, serviços, discos e inicialização…"; if (!log.IsDisposed) log.Text = maintenanceLog;
             var script = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$ErrorActionPreference='Stop';$rows=@();try{$rows+= [pscustomobject]@{Grupo='Defender';Dados=(Get-MpComputerStatus|Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureLastUpdated)}}catch{$rows+=[pscustomobject]@{Grupo='Defender';Erro=$_.Exception.Message}};try{$rows+=[pscustomobject]@{Grupo='Firewall';Dados=@(Get-NetFirewallProfile|Select-Object Name,Enabled)}}catch{$rows+=[pscustomobject]@{Grupo='Firewall';Erro=$_.Exception.Message}};$rows+=[pscustomobject]@{Grupo='Serviços';Dados=@(Get-Service|Where-Object {$_.Name -in @('Spooler','wuauserv','bits','WinDefend','Dnscache','LanmanWorkstation','W32Time')}|Select-Object Name,Status,StartType)};try{$rows+=[pscustomobject]@{Grupo='Discos';Dados=@(Get-PhysicalDisk|Select-Object FriendlyName,MediaType,Size,HealthStatus,OperationalStatus)}}catch{$rows+=[pscustomobject]@{Grupo='Discos';Erro=$_.Exception.Message}};$rows+=[pscustomobject]@{Grupo='Inicialização';Dados=@(Get-CimInstance Win32_StartupCommand|Select-Object Name,Location)};ConvertTo-Json -InputObject $rows -Depth 7 -Compress";
             var outcome = await UpdateProcess(script, ct); if (outcome.ExitCode != 0) throw new IOException(outcome.Error);
             maintenanceLog = outcome.Output; if (!log.IsDisposed) log.Text = maintenanceLog;
             return TestResult.Done("Segurança / serviços / inicialização", ("Consulta", System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(outcome.Output)), ("Alterações", "Nenhuma"));
         }), true);
-        Heading("Manutenção do Windows", "Baseada no script de limpeza/corretiva do Helpdesk, com prévia, escopo explícito e códigos reais. SFC/DISM podem demorar. O app aguarda o comando terminar e não reinicia o PC automaticamente. Diagnóstico de segurança é somente leitura.");
+        Heading("Manutenção do Windows", "Andamento desde o início, saída ao vivo, diagnóstico e correções por etapa à sua escolha. SFC/DISM podem demorar e ficar sem emitir texto; o tempo continua visível. Reinício somente manual.");
     }
 }

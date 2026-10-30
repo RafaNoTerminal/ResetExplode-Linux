@@ -35,7 +35,7 @@ internal static class CompanyService
     internal static async Task<TestResult> ApplyPrinters(string script, string name)
     {
         using var data = await Script(script, CancellationToken.None); var rows = OperationResults.Packages(data.RootElement.GetRawText());
-        return new(name, rows.Any(r => r.Failed) ? "Concluído com falhas" : rows.Count == 0 ? "Nenhuma fila correspondente" : "Concluído", new() { ["Etapas"] = rows.ToArray() }, DateTimeOffset.Now);
+        return new(name, rows.Any(r => r.Failed) ? "Concluído com falhas" : rows.Count == 0 ? "Nenhuma fila correspondente" : rows.Any(r => r.Estado == "Pendente") ? "Concluído com pendências; conferir detalhes" : "Concluído", new() { ["Etapas"] = rows.ToArray() }, DateTimeOffset.Now);
     }
     internal static async Task<TestResult> RunTool(CompanyProfile profile, CompanyTool tool)
     {

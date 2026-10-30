@@ -17,6 +17,7 @@ public static class PrinterScripts
     {
         if (printers.Length == 0 || string.IsNullOrWhiteSpace(driver)) throw new ArgumentException("Selecione filas e um driver instalado.");
         new CompanyProfile(@"\\fixture\share", printers, []).Validate();
+        if (printers.Any(p => p.Receipt) && (printers.Any(p => !p.Receipt) || !System.Text.RegularExpressions.Regex.IsMatch(driver, @"(?i)elgin.*i.?9|i.?9.*elgin"))) throw new ArgumentException("Instale comprovantes separadamente e selecione o driver Elgin i9 correto.");
         return Prefix(new { Printers = printers, Driver = driver }) + """
             if(-not @(Get-PrinterDriver | Where-Object {$_.Name -eq $data.Driver}).Count){throw 'O driver escolhido não está instalado.'}
             if((Get-Service Spooler).Status -ne 'Running'){throw 'Spooler não está iniciado. Use Iniciar Spooler e repita.'}
@@ -50,6 +51,68 @@ public static class PrinterScripts
             ConvertTo-Json -InputObject @($rows.ToArray()) -Depth 5 -Compress
             """;
     }
+    public static string ConfigureReceipts(CompanyPrinter[] printers, string backupDirectory) {
+        if (printers.Length == 0 || printers.Any(p => !p.Receipt)) throw new ArgumentException("Selecione somente filas de comprovantes.");
+        new CompanyProfile(@"\\fixture\share", printers, []).Validate();
+        return Prefix(new { Printers = printers, BackupDirectory = backupDirectory }) + ReceiptBody;
+    }
+    public static string RestoreReceipt(string file) => Prefix(new { RestoreFile = file }) + ReceiptBody;
+    const string ReceiptBody = """
+        $rows=[Collections.Generic.List[object]]::new()
+        $restore=[bool]$data.RestoreFile
+        if($restore){
+          $saved=Get-Content -LiteralPath $data.RestoreFile -Raw|ConvertFrom-Json
+          if($saved.Computer -ne $env:COMPUTERNAME){throw 'Backup de outro computador.'}
+          $targets=@([pscustomobject]@{Name=$saved.Name;Ip=$saved.Ip})
+        }else{$targets=@($data.Printers)}
+        foreach($p in $targets){try{
+          $queue=@(Get-Printer|Where-Object {$_.Name -eq $p.Name})
+          if($queue.Count -ne 1){throw 'Instale a fila antes de ajustar as preferências.'}
+          $queue=$queue[0]
+          if($queue.DriverName -notmatch '(?i)elgin.*i.?9|i.?9.*elgin'){throw 'A fila não usa driver Elgin i9; nenhum ajuste aplicado.'}
+          $port=Get-PrinterPort|Where-Object {$_.Name -eq $queue.PortName}
+          if($port.PrinterHostAddress -ne $p.Ip){throw 'Destino da fila diverge do catálogo/backup; ajustes preservados.'}
+          if(@(Get-PrintJob -PrinterName $p.Name -ErrorAction Stop).Count){throw 'Há trabalhos pendentes; aguarde antes de ajustar.'}
+          $cfg=Get-PrintConfiguration -PrinterName $p.Name -ErrorAction Stop
+          if($restore){
+            if($queue.DriverName -ne $saved.Driver -or $queue.PortName -ne $saved.Port){throw 'Driver/porta mudou desde o backup; revise manualmente.'}
+            Set-PrintConfiguration -PrinterName $p.Name -PrintTicketXml $saved.PrintTicketXml
+            Set-Printer -Name $p.Name -Comment $saved.Comment
+            $targetXml=[xml]$saved.PrintTicketXml
+          }else{
+            New-Item -ItemType Directory -Force -Path $data.BackupDirectory|Out-Null
+            $file=Join-Path $data.BackupDirectory ('comprovantes-'+[guid]::NewGuid().ToString('N')+'.json')
+            [pscustomobject]@{Computer=$env:COMPUTERNAME;Name=$p.Name;Ip=$p.Ip;Driver=$queue.DriverName;Port=$queue.PortName;Comment=$queue.Comment;PrintTicketXml=$cfg.PrintTicketXML}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $file -Encoding UTF8
+            $rows.Add([pscustomobject]@{Acao='Backup comprovantes';Pacote=$p.Name;Escopo='Fila selecionada';Estado='Aplicado';Detalhes=$file})
+            [xml]$ticket=$cfg.PrintTicketXML
+            if(-not $ticket.DocumentElement){throw 'Driver não expôs PrintTicket; configure em Preferências da fila.'}
+            $ns='http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework'
+            $keys='http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords'
+            $ticket.DocumentElement.SetAttribute('xmlns:psk',$keys)
+            foreach($old in @($ticket.SelectNodes("//*[local-name()='Feature']")|Where-Object {$_.GetAttribute('name').Split(':')[-1] -eq 'PageMediaSize'})){[void]$old.ParentNode.RemoveChild($old)}
+            $feature=$ticket.CreateElement('psf','Feature',$ns);$feature.SetAttribute('name','psk:PageMediaSize')
+            $option=$ticket.CreateElement('psf','Option',$ns);$option.SetAttribute('name','psk:CustomMediaSize');[void]$feature.AppendChild($option)
+            foreach($size in @(@('MediaSizeWidth','72000'),@('MediaSizeHeight','100000'))){
+              $property=$ticket.CreateElement('psf','ScoredProperty',$ns);$property.SetAttribute('name',('psk:'+$size[0]))
+              $value=$ticket.CreateElement('psf','Value',$ns);$value.InnerText=$size[1];[void]$property.AppendChild($value);[void]$option.AppendChild($property)
+            }
+            [void]$ticket.DocumentElement.AppendChild($feature)
+            Set-PrintConfiguration -PrinterName $p.Name -PrintTicketXml $ticket.OuterXml
+            Set-PrintConfiguration -PrinterName $p.Name -Color $false -DuplexingMode OneSided
+            Set-Printer -Name $p.Name -Comment 'Elgin i9 - comprovantes - 72x100 mm; conferir corte no driver'
+            $targetXml=$ticket
+          }
+          $after=Get-PrintConfiguration -PrinterName $p.Name -ErrorAction Stop
+          if(-not $restore){
+            [xml]$verified=$after.PrintTicketXML
+            function Read-Dimension($dimension){$v=$verified.SelectNodes("//*[local-name()='Feature']")|Where-Object {$_.GetAttribute('name').Split(':')[-1] -eq 'PageMediaSize'}|ForEach-Object {$_.SelectNodes(".//*[local-name()='ScoredProperty']")}|Where-Object {$_.GetAttribute('name').Split(':')[-1] -eq $dimension}|ForEach-Object {$_.SelectSingleNode("*[local-name()='Value']").InnerText};return [string]($v|Select-Object -First 1)}
+            if((Read-Dimension 'MediaSizeWidth') -ne '72000' -or (Read-Dimension 'MediaSizeHeight') -ne '100000' -or $after.Color -ne $false -or [string]$after.DuplexingMode -ne 'OneSided'){throw ('O driver não confirmou 72x100 mm/monocromático/frente única. Configure nas Preferências ou restaure o backup '+$file)}
+          }elseif(([xml]$after.PrintTicketXML).OuterXml -ne $targetXml.OuterXml){throw 'Driver normalizou ou não confirmou o ticket restaurado; confira as preferências.'}
+          $rows.Add([pscustomobject]@{Acao='Preferências comprovantes';Pacote=$p.Name;Escopo='Fila selecionada';Estado='Aplicado';Detalhes=$(if($restore){'Ticket anterior restaurado e conferido.'}else{'72x100 mm, monocromático e frente única relidos no driver. Fila/porta/padrão preservados.'})})
+          if(-not $restore){$rows.Add([pscustomobject]@{Acao='Corte parcial';Pacote=$p.Name;Escopo='Driver Elgin';Estado='Pendente';Detalhes='Perfil .dat não fornecido. Configure corte parcial nas preferências Elgin e teste um comprovante real.'})}
+        }catch{$rows.Add([pscustomobject]@{Acao='Preferências comprovantes';Pacote=$p.Name;Escopo='Fila selecionada';Estado='Erro';Detalhes=$_.Exception.Message})}}
+        ConvertTo-Json -InputObject @($rows.ToArray()) -Depth 5 -Compress
+        """;
     public static string MigrateRicoh(string backupFile, bool restore = false) => Prefix(new { File = backupFile, Restore = restore }) + """
         $old='RICOH SP 377SFNwX PCL 6';$new='PCL6 Driver for Universal Print';$rows=[Collections.Generic.List[object]]::new()
         if(-not $data.Restore){

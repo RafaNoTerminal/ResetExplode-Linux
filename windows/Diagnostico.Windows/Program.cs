@@ -13,12 +13,14 @@ static class Program
                 using var form = new MainForm(collectOnShow: false); form.Show(); Application.DoEvents();
                 var inventory = Inventory.Collect();
                 form.VerifyUi(inventory);
+                form.Verify050Ui();
                 form.VerifyTaskAndFailureUi(args.Length >= 2 ? args[1] : null);
                 SmokeChecks.VerifyAdministratorManifest();
                 SmokeChecks.VerifyPackageFailures();
                 SmokeChecks.VerifyNativeExitCode();
                 MaintenanceSmoke.Verify();
                 CompanySmoke.Verify();
+                RegressionSmoke.Verify();
                 if (!inventory.Any(x => x.Grupo == "CPU" && x.Campo == "Modelo")) throw new Exception("CPU ausente no inventário.");
                 if (Inventory.Memory().Total <= 0 || Inventory.Processes().Count == 0) throw new Exception("Coleta Windows falhou.");
                 Automation.VerifyRegistryCodec();

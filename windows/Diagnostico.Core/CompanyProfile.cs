@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 namespace Diagnostico;
 
-public record CompanyPrinter(string Code, string Name, string Ip, string Driver = "")
+public record CompanyPrinter(string Code, string Name, string Ip, string Driver = "", bool Receipt = false)
 {
     public override string ToString() => Code + " · " + Name + " · " + Ip;
 }
@@ -18,7 +18,7 @@ public record CompanyProfile(string Root, CompanyPrinter[] Printers, CompanyTool
     public static CompanyProfile Empty => new("", [], []);
     public void Validate()
     {
-        _ = RootParts(Root);
+        if (Root.Length > 0) _ = RootParts(Root);
         if (PrintServer.Length > 0) NetworkDiagnostics.ValidateHost(PrintServer);
         foreach (var p in Printers) {
             if (string.IsNullOrWhiteSpace(p.Name) || p.Name.Any(char.IsControl) || p.Name.Length > 180 || !IPAddress.TryParse(p.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) throw new ArgumentException("Nome/IP inválido no perfil de impressoras.");

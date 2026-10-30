@@ -23,7 +23,7 @@ internal sealed class SensorHardwareReader : IDisposable
                 try { hardware.Update(); }
                 catch (Exception e) { rows.Add(new(hardware.Name, "Consulta", "Erro", e.Message, "", "", "", "LibreHardwareMonitor")); }
                 foreach (var sensor in hardware.Sensors) {
-                    string Format(float? value) => value.HasValue && float.IsFinite(value.Value) ? value.Value.ToString("N2") : "Indisponível";
+                    string Format(float? value) => value.HasValue && float.IsFinite(value.Value) ? value.Value.ToString(sensor.SensorType == SensorType.Temperature ? "0°" : "N2") : "Indisponível";
                     string unit = sensor.SensorType switch { SensorType.Temperature => "°C", SensorType.Fan => "RPM", SensorType.Voltage => "V", SensorType.Power => "W", SensorType.Load or SensorType.Level or SensorType.Control => "%", SensorType.Clock => "MHz", SensorType.Data => "GB", SensorType.SmallData => "MB", SensorType.Throughput => "B/s", SensorType.Current => "A", SensorType.Energy => "mWh", _ => "" };
                     rows.Add(new(hardware.Name, sensor.SensorType.ToString(), sensor.Name, Format(sensor.Value), Format(sensor.Min), Format(sensor.Max), unit, "LibreHardwareMonitor · " + sensor.Identifier));
                 }

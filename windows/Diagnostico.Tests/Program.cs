@@ -151,6 +151,27 @@ await Reject<IOException>(() => SpeedTest.Run(null, CancellationToken.None, serv
 using (var cancelled = new CancellationTokenSource()) { cancelled.Cancel(); await Reject<OperationCanceledException>(() => SpeedTest.Run(null, cancelled.Token, server, createClient: factory)); }
 Console.WriteLine($"OK: {passed} verificações · HTML, validação, memória, disco/limpeza, cancelamento e medição nativa/413/orçamento.");
 
+// Diagnostics can report corruption with a nonzero SFC exit; preserve the finding
+// and suggest servicing instead of interpreting every nonzero exit as "no result".
+Check(MaintenanceAssessment.Read("sfc-verify", 1, "A Proteção de Recursos do Windows encontrou violações de integridade.").Suggested.SequenceEqual(new[] { "sfc-repair" }), "Violação SFC não ofereceu correção");
+Check(MaintenanceAssessment.Read("sfc-repair", 0, "Windows Resource Protection found corrupt files but was unable to fix some of them.").Suggested.SequenceEqual(new[] { "dism-repair", "sfc-repair" }), "SFC incompleto perdeu sugestão DISM/SFC");
+Check(MaintenanceAssessment.Read("sfc-repair", 0, "A Proteção de Recursos do Windows encontrou arquivos corrompidos e os reparou com êxito.").Suggested.Length == 0, "Reparo confirmado gerou nova correção automática");
+Check(MaintenanceAssessment.Read("sfc-verify", 0, "Windows Resource Protection did not find any integrity violations.").State == "Sem violações no SFC", "SFC sem violações classificado incorretamente");
+Check(MaintenanceAssessment.Read("dism-scan", 0, "The component store is repairable.").Suggested.Contains("dism-repair"), "DISM reparável não oferece RestoreHealth");
+Check(MaintenanceAssessment.Read("dism-scan", 0, "The component store cannot be repaired.").Suggested.Length == 0, "DISM não reparável propôs reparo cego");
+Check(MaintenanceAssessment.Read("sfc-verify", 5, "Access denied").State == "Erro na execução", "Erro de execução ignorado");
+Check(MaintenanceAssessment.Read("sfc-verify", 0, "Unknown localized output").State.Contains("conferir"), "Saída desconhecida aprovada sem evidência");
+var onboarding = OnboardingProfile.Default; onboarding.Validate();
+Check(onboarding.Sectors.Single().Items.Count(i => i.Kind == OnboardingKind.Download) == 8, "Apps do técnico interno não correspondem ao Mint");
+Check(onboarding.Sectors.Single().Items.Where(i => i.Kind == OnboardingKind.Printer).Count() == 0, "Impressoras de setor foram presumidas");
+await Reject<ArgumentException>(() => Task.FromResult(OnboardingProfile.WebUri("https://user:secret@example.com")));
+await Reject<ArgumentException>(() => Task.FromResult(OnboardingProfile.WebUri("file:///C:/Windows")));
+var receipt = new CompanyPrinter("TST", "TST_IMP_Comprovantes", "192.0.2.22", Receipt: true);
+await Reject<ArgumentException>(() => Task.FromResult(PrinterScripts.Install([receipt], "Ricoh driver")));
+Check(PrinterScripts.Install([receipt], "ELGIN i9").Contains("Add-Printer"), "Driver Elgin correto rejeitado");
+Check(PrinterScripts.ConfigureReceipts([receipt], "fixture").Contains("72000"), "Preferências de comprovante ausentes");
+Console.WriteLine($"Total final: {passed} verificações aprovadas.");
+
 sealed class FixtureHandler : HttpMessageHandler
 {
     public long UploadBytes; public int Rejected413; public bool BlockUploads, WrongSize;
