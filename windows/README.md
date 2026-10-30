@@ -1,4 +1,4 @@
-# RBT Diagnóstico · Windows 0.5.2
+# RBT Diagnóstico · Windows 0.5.3
 
 **0.5.2: comprovantes automáticos, sem primeira configuração manual.** Em Impressoras/empresa → Comprovantes: driver e perfil, instale o driver Elgin fornecido, marque as unidades e clique **Adicionar e configurar automaticamente**. Para filas já instaladas, use **Ajustes automáticos → Aplicar automaticamente às filas marcadas**. Papel72×100mm, corte parcial no fim da página/0mm e logo salvo no início da página/Meio/chave0/0 são escritos e relidos pelo app; não exige capturar modelo. A imagem física do logo deve estar gravada na impressora (seleção automática do logo não grava a imagem). O fluxo de modelo manual descrito no histórico0.5.1 passou a ser uma alternativa opcional.
 
@@ -147,3 +147,14 @@ O preset está limitado ao pacote1.8.0x64 fornecido por Rafael: nome `ELGIN i9(U
 O mapeamento foi validado com a DLL original, recursos reais das páginasCutPaper/Logo e a saída do codec C# de produção: em ambienteWine/Xvfb isolado, páginas criadas somente em memória, sem registrar impressora/driver, instalar certificado ou acessar rede de impressoras. O driver interpretouFimPágina/Parcial/0mm eInícioPágina/Logosalvocomimpressora/Meio/chaves0/0 e seus callbacks salvaram os mesmos valores. Isso valida a interpretação do formato pelo driver; não é teste físico de impressão nem prova de instalação/Win32spooler noPC alvo. O teste reproduzível e os hashes constam em `windows/Tests/ElginDriverCodecProbe.c` e `windows/Tests/ELGIN-CODEC.md`; os binários proprietários permanecem locais, fora do repositório/fonteZIP.
 
 O app seleciona o logo já salvo em memória da impressora. Gravar a imagem quando ausente continua sendo uma operação de configuração do equipamento, pelo utilitário Elgin, com alvo e imagem escolhidos explicitamente. A automação aqui implementada cobre as preferências de impressão das fotos, sem enviar firmware ou comandos de gravação a equipamentos da rede.
+
+
+### Ricoh 0.5.3 · instalar driver pelo app
+
+Em **Impressoras/empresa → Ricoh: driver e filas**, escolha o modelo e use **Instalar somente o driver** ou **Instalar driver e filas marcadas**. O perfil inicial aponta ao pacote SP377x64 fornecido no pendrive, versão1.03.0.0/21-02-2017, com seis modelos SP320/325/377 e padrão `RICOH SP 377SFNwX PCL 6`. Esse pacote não é o driver Universal nem corresponde automaticamente a toda impressora Ricoh: marque somente equipamentos compatíveis com o modelo escolhido. As funções anteriores de uso de outro driver já instalado e migração SP377→Universal continuam separadas e explícitas.
+
+O app copia o pacote para diretório temporário protegido, confere INF/catálogo porSHA256, prepara o DriverStore com `pnputil /add-driver` (sem `/install`, sem atualização de dispositivos existentes ou reinício) e localiza o INF exato no DriverStore. Registra somente o modelo escolhido com `Add-PrinterDriver` e confirma sua presença no spooler x64. Driver já registrado é preservado sem reinstalar/atualizar. Erro ou reinício3010 interrompe a sequência antes de criar filas. A validação do catálogo/arquivos fica com o Windows; não importa certificado nem enfraquece política de assinatura. Códigozero doPNPUtil sozinho não é aprovação de instalação.
+
+Depois de confirmar o driver, cria apenas filas marcadas ausentes, com backup do inventário e preservação das filas/driver/preferências/portas/trabalhos/padrão existentes. O perfil e os arquivos privados ficam em `Empresa/rbt-ricoh-driver.json` e `DRIVERS/IMP_RICOH`, fora do repositório/fonteZIP. Mantenha o pacote junto da versão portátil. O testeWindows usa funçõesPowerShell simuladas para sucesso, driver já presente, erro de preparação, reinício pendente e registro não confirmado; nunca instala driverRicoh real noCI. Ainda depende de teste físico noWindows da empresa.
+
+Referências: [PNPUtil](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-examples) e [Add-PrinterDriver / InfPath no DriverStore](https://learn.microsoft.com/en-us/powershell/module/printmanagement/add-printerdriver).

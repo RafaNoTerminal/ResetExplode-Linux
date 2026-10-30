@@ -211,6 +211,14 @@ foreach (int offset in new[] { 0x33c, 0x340, 0x344, 0x3a0, 0x7c0, 0x7c4, 0x7c5, 
 }
 string? codecOutput = Environment.GetEnvironmentVariable("RBT_ELGIN_CODEC_OUTPUT");
 if (!string.IsNullOrWhiteSpace(codecOutput)) File.WriteAllBytes(codecOutput, automatic.DevMode);
+var localDriver = new LocalPrinterPackage("Fixture Ricoh", "DRIVERS/FixtureRicoh", "fixture.inf", new string('a',64), "fixture.cat", new string('b',64), ["Fixture Ricoh", "Fixture Ricoh 2"], "Fixture Ricoh");
+localDriver.Validate();
+Check(localDriver.InstallScript("fixture.inf", "Fixture Ricoh").Contains("/add-driver") && !localDriver.InstallScript("fixture.inf", "Fixture Ricoh").Split("$rows=")[0].Contains(" /install"), "Driver staging inclui atualização de dispositivos");
+Check(LocalPrinterPackage.Body.Contains("FileRepository") && LocalPrinterPackage.Body.Contains("Add-PrinterDriver") && LocalPrinterPackage.Body.Contains("PrinterEnvironment"), "Driver não é confirmado no Driver Store/spooler x64");
+Check(!LocalPrinterPackage.Body.Contains("Restart-Service") && !LocalPrinterPackage.Body.Contains("Remove-Printer"), "Instalação do driver pode reiniciar spooler/remover filas");
+await Reject<ArgumentException>(() => Task.Run(() => (localDriver with { RelativeDirectory = "DRIVERS/../escape" }).Validate()));
+await Reject<ArgumentException>(() => Task.Run(() => (localDriver with { InfSha256 = "bad" }).Validate()));
+await Reject<ArgumentException>(() => Task.Run(() => localDriver.InstallScript("fixture.inf", "Foreign model")));
 Console.WriteLine($"Total final: {passed} verificações aprovadas.");
 
 sealed class FixtureHandler : HttpMessageHandler

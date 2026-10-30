@@ -21,6 +21,12 @@ static class Program
                 MaintenanceSmoke.Verify();
                 CompanySmoke.Verify();
                 RegressionSmoke.Verify();
+                RicohSmoke.Verify();
+                using (var ricoh = new RicohSetupDialog([new("FIX", "Fixture queue", "192.0.2.1")], [], _ => { }, RicohSmoke.Fixture)) {
+                    ricoh.Show(form); Application.DoEvents(); ricoh.VerifyUi();
+                    if (args.Length >= 2) { using var shot = new Bitmap(ricoh.Width, ricoh.Height); ricoh.DrawToBitmap(shot, new Rectangle(Point.Empty, ricoh.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-ricoh.png")); }
+                    ricoh.Close();
+                }
                 using (var elgin = new ElginSetupDialog([], [], _ => { }, collectOnShow: false)) {
                     elgin.Show(form); Application.DoEvents(); elgin.VerifyUi();
                     if (args.Length >= 2) { using var shot = new Bitmap(elgin.Width, elgin.Height); elgin.DrawToBitmap(shot, new Rectangle(Point.Empty, elgin.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-elgin.png")); }

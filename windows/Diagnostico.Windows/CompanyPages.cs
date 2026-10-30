@@ -27,6 +27,9 @@ public sealed partial class MainForm
                 if (selected.Any(p => !p.Receipt)) { MessageBox.Show(this, "Selecione comprovantes separadamente das filas de recepção.", Brand.Name); return; }
                 using var dialog = new ElginSetupDialog(company.Printers, selected, result => results.Add(result)); dialog.ShowDialog(this); return;
             }
+            if (selected.Length > 0 && drivers.SelectedItem is not string) {
+                using var dialog = new RicohSetupDialog(company.Printers, selected, result => results.Add(result)); dialog.ShowDialog(this); return;
+            }
             if (selected.Length == 0 || drivers.SelectedItem is not string driver) { MessageBox.Show(this, "Marque as filas e escolha um driver instalado. Use Inventário / drivers.", Brand.Name); return; }
             if (MessageBox.Show(this, "Criar somente filas ainda ausentes?\n\n" + string.Join("\n", selected.Select(p => p.Name + " → " + p.Ip)) + "\nDriver: " + driver + "\n\nNenhuma fila/porta/trabalho existente será removido. Impressora padrão preservada.", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
             _ = Run("Instalar impressoras", async ct => {
@@ -36,10 +39,9 @@ public sealed partial class MainForm
                 using var dialog = SetupResultDialog(result); dialog.ShowDialog(this); return result;
             });
         }, true);
-        Button(actions, "Migrar Ricoh SP377 → Universal", () => {
-            if (task is not null || MessageBox.Show(this, "Trocar apenas o driver de filas que usam exatamente RICOH SP 377SFNwX PCL 6 para PCL6 Driver for Universal Print?\n\nO driver Universal precisa estar instalado. Salva backup; mantém fila, porta/IP, compartilhamento e padrão. Não apaga trabalhos.", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-            Directory.CreateDirectory(Automation.BackupDirectory); string file = Path.Combine(Automation.BackupDirectory, "ricoh-driver-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
-            _ = Run("Migrar driver Ricoh", async ct => { var result = await CompanyService.ApplyPrinters(PrinterScripts.MigrateRicoh(file), "Migrar driver Ricoh"); result.Dados["Backup"] = file; using var dialog = SetupResultDialog(result); dialog.ShowDialog(this); return result; });
+        Button(actions, "Ricoh: driver e filas", () => {
+            if (task is not null) return;
+            using var dialog = new RicohSetupDialog(company.Printers, list.CheckedItems.Cast<CompanyPrinter>().ToArray(), result => results.Add(result)); dialog.ShowDialog(this);
         }, true);
         var receipts = Actions();
         Button(receipts, "Comprovantes: driver e perfil", () => {
@@ -66,6 +68,12 @@ public sealed partial class MainForm
         var network = Actions();
         Button(network, "Testar IP/porta9100 da seleção", () => { if (list.SelectedItem is CompanyPrinter p) _ = Run("Conexão com impressora", ct => NetworkDiagnostics.Tcp(p.Ip, 9100, ct), cancellableTest: true); }, true);
         Button(network, "Testar servidor SMB445", () => { try { company.Validate(); _ = Run("Conexão com servidor", ct => NetworkDiagnostics.Tcp(company.Server, 445, ct), cancellableTest: true); } catch (Exception e) { MessageBox.Show(this, e.Message, Brand.Name); } }, true);
+        var migration = Actions();
+        Button(migration, "Migrar Ricoh SP377 → Universal", () => {
+            if (task is not null || MessageBox.Show(this, "Trocar apenas o driver de filas que usam exatamente RICOH SP 377SFNwX PCL 6 para PCL6 Driver for Universal Print?\n\nO driver Universal precisa estar instalado. Salva backup; mantém fila, porta/IP, compartilhamento e padrão. Não apaga trabalhos.", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+            Directory.CreateDirectory(Automation.BackupDirectory); string file = Path.Combine(Automation.BackupDirectory, "ricoh-driver-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
+            _ = Run("Migrar driver Ricoh", async ct => { var result = await CompanyService.ApplyPrinters(PrinterScripts.MigrateRicoh(file), "Migrar driver Ricoh"); result.Dados["Backup"] = file; using var dialog = SetupResultDialog(result); dialog.ShowDialog(this); return result; });
+        }, true);
         var discovery = Actions();
         Button(discovery, "Listar filas do servidor", () => { try { company.Validate(); string server = company.PrintServer.Length > 0 ? company.PrintServer : company.Server; _ = Run("Consultar servidor de impressão", async ct => { using var data = await CompanyService.Script(PrinterScripts.Server(server), ct); details.Text = Reports.Json(data.RootElement); return TestResult.Done("Filas compartilhadas do servidor", ("Servidor", server), ("Filas", data.RootElement.Clone())); }); } catch (Exception e) { MessageBox.Show(this, e.Message, Brand.Name); } }, true);
         Button(discovery, "Buscar impressoras no domínio", () => _ = Run("Impressoras do domínio", async ct => { using var data = await CompanyService.Script(PrinterScripts.Directory, ct); details.Text = Reports.Json(data.RootElement); return TestResult.Done("Filas publicadas no AD", ("Filas", data.RootElement.Clone()), ("Limite", "Até500filas; exige DNS e conta com acesso ao diretório. Nenhuma instalação automática.")); }), true);
@@ -73,7 +81,7 @@ public sealed partial class MainForm
         Button(shared, "Conectar fila compartilhada", () => { if (task is not null) return; string path = unc.Text.Trim(); try { _ = CompanyProfile.RootParts(path); } catch (Exception e) { MessageBox.Show(this, e.Message, Brand.Name); return; } if (MessageBox.Show(this, "Conectar " + path + " usando as políticas de impressão do Windows?", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return; _ = Run("Conectar impressora compartilhada", async ct => { using var data = await CompanyService.Script(PrinterScripts.Shared(path), CancellationToken.None); return TestResult.Done("Conexão compartilhada", ("Resultado", data.RootElement.Clone())); }); }, true);
         // Keep the printer list usable on notebook screens: less common network/domain
         // controls live in an expandable panel, rather than consuming every row.
-        var advancedRows = new[] { network, discovery, shared };
+        var advancedRows = new[] { network, migration, discovery, shared };
         foreach (var row in advancedRows) { row.Visible = false; row.Height = 0; }
         var advanced = Actions();
         Button(advanced, "Mostrar / ocultar rede e domínio", () => { bool show = !network.Visible; foreach (var row in advancedRows) { row.Visible = show; row.Height = show ? 44 : 0; } });
