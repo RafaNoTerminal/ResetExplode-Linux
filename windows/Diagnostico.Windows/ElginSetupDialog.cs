@@ -22,11 +22,13 @@ internal sealed class ElginSetupDialog : Form
         var driverActions = Row(install, DockStyle.Top);
         Add(driverActions, "1 · Instalar driver Elgin 1.8.0", () => Install(false));
         Add(driverActions, "Atualizar inventário", () => _ = Operate(RefreshInventory));
+        operations.AddRange(PrinterSelectionButtons.Add(driverActions, queues));
         var queueActions = Row(install, DockStyle.Bottom);
         Add(queueActions, "2 · Adicionar e configurar automaticamente", () => _ = Operate(async () => {
             var chosen = Selected();
             if (chosen.Length == 0) throw new IOException("Marque as unidades desejadas.");
             if (MessageBox.Show(this, "Adicionar somente as filas ausentes usando " + ElginSetupService.DriverName + "?\r\n\r\n" + string.Join("\r\n", chosen.Select(p => p.Name + " → " + p.Ip)) + "\r\n\r\nFilas existentes, portas, trabalhos e padrão serão preservados. Em seguida o app aplica papel 72×100 mm, corte parcial no fim da página/0 mm e logo salvo no início da página/Meio/chave 0/0, com backup. Não é preciso modelo manual.", Text, MessageBoxButtons.OKCancel) != DialogResult.OK) return null;
+            if (!await EnsureDriver()) return null;
             using var before = await CompanyService.Script(PrinterScripts.Inventory, CancellationToken.None);
             Directory.CreateDirectory(Automation.BackupDirectory);
             string file = Path.Combine(Automation.BackupDirectory, "elgin-inventario-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".json");
@@ -88,6 +90,17 @@ internal sealed class ElginSetupDialog : Form
         catch (Exception e) { output.Text = e.Message; state.Text = "Operação não concluída"; record(new("Comprovantes Elgin", "Não concluído", new() { ["Erro"] = e.Message }, DateTimeOffset.Now)); MessageBox.Show(this, e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         finally { busy = false; operations.ForEach(b => b.Enabled = true); }
     }
+    async Task<bool> EnsureDriver() {
+        async Task<bool> Present() { using var data = await CompanyService.Script(PrinterScripts.Inventory, CancellationToken.None); return data.RootElement.GetProperty("Drivers").EnumerateArray().Any(d => d.GetProperty("Name").GetString() == ElginSetupService.DriverName); }
+        return await PrinterDriverRequirement.Ensure(Present, async () => {
+            if (MessageBox.Show(this, "O driver Elgin ainda não está instalado. Deseja instalar agora antes de criar as filas?\r\n\r\nSerá aberto o instalador original Elgin 1.8.0 do pendrive, com SHA256 conferido. Esse EXE antigo não tem assinatura Authenticode. Siga o instalador até concluir, preservando as filas existentes. Se solicitar reinício, faça manualmente antes de continuar.", Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2) != DialogResult.OK) return false;
+            var result = await ElginSetupService.InstallOriginal(false); record(result); output.Text = OperationResults.Summary(result); await RefreshInventory();
+            int code = Convert.ToInt32(result.Dados["Retorno"]);
+            if (code == 3010) throw new IOException("O instalador Elgin pediu reinício. Nenhuma fila foi criada; reinicie manualmente e tente novamente.");
+            if (code != 0) throw new IOException("Instalador Elgin retornou " + code + ". Nenhuma fila foi criada; confira o resultado do instalador.");
+            return true;
+        });
+    }
     async Task<TestResult?> RefreshInventory() {
         using var data = await CompanyService.Script(PrinterScripts.Inventory, CancellationToken.None);
         string? selected = sourceQueue.SelectedItem as string; sourceQueue.Items.Clear();
@@ -115,7 +128,7 @@ internal sealed class ElginSetupDialog : Form
         return TestResult.Done("Capturar modelo completo Elgin", ("Fila modelo", name), ("Perfil salvo", ElginSetupService.ProfileFile), ("Backup anterior à janela", backup), ("Backup anterior à aplicação", appliedBackup), ("Conferência", "Ajustes do guia declarados conferidos pelo técnico. Preferências completas aplicadas e relidas. Teste físico e logo na memória da impressora ainda precisam de conferência."));
     }
     internal void VerifyUi() {
-        if (operations.Count != 10 || !Guide.Contains("Papel parcialmente cortado") || !Guide.Contains("Logo salvo com impressora") || !Guide.Contains("0 / 0")) throw new Exception("Fluxo automático/restauração ou guia de corte/logo ausente.");
+        if (operations.Count != 12 || !Guide.Contains("Papel parcialmente cortado") || !Guide.Contains("Logo salvo com impressora") || !Guide.Contains("0 / 0")) throw new Exception("Fluxo automático/restauração ou guia de corte/logo ausente.");
         if (!operations.Any(b => b.Text == "2 · Adicionar e configurar automaticamente") || !operations.Any(b => b.Text == "Aplicar automaticamente às filas marcadas")) throw new Exception("Ação automática sem modelo manual ausente.");
         ((TabControl)Controls.OfType<TabControl>().Single()).SelectedIndex = 1; Application.DoEvents();
         if (sourceQueue.Items.Count != 0 || busy) throw new Exception("Fixture iniciou consulta/instalador ou acessou driver real.");

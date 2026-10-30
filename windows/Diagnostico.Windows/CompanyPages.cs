@@ -9,7 +9,7 @@ public sealed partial class MainForm
     void BuildCompanyPrinters()
     {
         LoadCompany(); var list = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, BackColor = Surface, ForeColor = Ink, HorizontalScrollbar = true }; list.Items.AddRange(company.Printers.Cast<object>().ToArray()); content.Controls.Add(list);
-        var filterBar = Actions(); var filter = new ComboBox { Width = 270, DropDownStyle = ComboBoxStyle.DropDownList }; filter.Items.AddRange(new object[] { "Todas as filas", "Recepção / escritório", "Comprovantes · Elgin i9" }); filter.SelectedIndex = 0; filterBar.Controls.Add(filter);
+        var filterBar = Actions(); var filter = new ComboBox { Width = 270, DropDownStyle = ComboBoxStyle.DropDownList }; filter.Items.AddRange(new object[] { "Todas as filas", "Recepção / escritório", "Comprovantes · Elgin i9" }); filter.SelectedIndex = 0; filterBar.Controls.Add(filter); PrinterSelectionButtons.Add(filterBar, list);
         filter.SelectedIndexChanged += (_, _) => { list.Items.Clear(); list.Items.AddRange(company.Printers.Where(p => filter.SelectedIndex == 0 || p.Receipt == (filter.SelectedIndex == 2)).Cast<object>().ToArray()); };
         var details = new TextBox { Dock = DockStyle.Bottom, Height = 75, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Surface, ForeColor = Ink, Text = "Selecione as filas desejadas. Confira os drivers instalados antes de aplicar. Filas, trabalhos, portas e impressora padrão existentes são preservados." }; content.Controls.Add(details);
         var drivers = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 430 }; var driverBar = Actions(); driverBar.Controls.Add(drivers);
@@ -55,6 +55,7 @@ public sealed partial class MainForm
         }, true);
         Button(receipts, "Preferências da fila", () => { if (list.SelectedItem is CompanyPrinter p) { var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "rundll32.exe")) { UseShellExecute = false }; foreach (string arg in new[] { "printui.dll,PrintUIEntry", "/e", "/n", p.Name }) start.ArgumentList.Add(arg); System.Diagnostics.Process.Start(start); } });
         var extras = Actions();
+        Button(extras, "Excluir impressoras…", () => { if(task is null) { using var dialog=new PrinterRemovalDialog(result=>results.Add(result)); dialog.ShowDialog(this); } }, true);
         Button(extras, "Restaurar driver Ricoh", () => {
             if (task is not null) return; using var dialog = new OpenFileDialog { InitialDirectory = Automation.BackupDirectory, Filter = "Backup Ricoh|ricoh-driver-*.json" }; if (dialog.ShowDialog(this) != DialogResult.OK) return; string file = dialog.FileName;
             _ = Run("Restaurar driver Ricoh", async ct => { var result = await CompanyService.ApplyPrinters(PrinterScripts.MigrateRicoh(file, true), "Restaurar driver Ricoh"); using var view = SetupResultDialog(result); view.ShowDialog(this); return result; });

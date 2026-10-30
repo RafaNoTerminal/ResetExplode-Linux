@@ -22,6 +22,12 @@ static class Program
                 CompanySmoke.Verify();
                 RegressionSmoke.Verify();
                 RicohSmoke.Verify();
+                PrinterSelectionButtons.Verify(); PrinterRemovalSmoke.Verify();
+                using (var removal = new PrinterRemovalDialog(_ => { }, collectOnShow: false)) {
+                    removal.Show(form); Application.DoEvents(); removal.VerifyUi();
+                    if (args.Length >= 2) { using var shot = new Bitmap(removal.Width, removal.Height); removal.DrawToBitmap(shot, new Rectangle(Point.Empty, removal.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-excluir-impressoras.png")); }
+                    removal.Close();
+                }
                 using (var ricoh = new RicohSetupDialog([new("FIX", "Fixture queue", "192.0.2.1")], [], _ => { }, RicohSmoke.Fixture)) {
                     ricoh.Show(form); Application.DoEvents(); ricoh.VerifyUi();
                     if (args.Length >= 2) { using var shot = new Bitmap(ricoh.Width, ricoh.Height); ricoh.DrawToBitmap(shot, new Rectangle(Point.Empty, ricoh.Size)); shot.Save(Path.Combine(Path.GetDirectoryName(args[1])!, "windows-ui-ricoh.png")); }

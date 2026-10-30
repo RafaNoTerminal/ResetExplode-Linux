@@ -14,8 +14,20 @@ public record LocalPrinterPackage(string Title, string RelativeDirectory, string
     public string InstallScript(string stagedInf, string model) {
         Validate(); if (!Models.Contains(model)) throw new ArgumentException("Modelo não pertence ao pacote selecionado.");
         string data = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { Inf = stagedInf, Hash = InfSha256, Model = model })));
-        return "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$ErrorActionPreference='Stop';$data=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + data + "'))|ConvertFrom-Json)\n" + "\n$stageDriver={param($inf);$text=(& (Join-Path $env:SystemRoot 'System32\\pnputil.exe') /add-driver $inf 2>&1|Out-String);[pscustomobject]@{Code=$LASTEXITCODE;Text=$text}}\n" + Body;
+        return "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$ErrorActionPreference='Stop';$data=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + data + "'))|ConvertFrom-Json)\n" + NativeHelpers + "\n" + Body;
     }
+    public const string NativeHelpers = """
+        $runNative={param($file,$nativeArguments)
+          $savedEncoding=[Console]::OutputEncoding
+          try{
+            [Console]::OutputEncoding=[Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
+            $text=(& $file @nativeArguments 2>&1|Out-String);$nativeCode=$LASTEXITCODE
+          }finally{[Console]::OutputEncoding=$savedEncoding}
+          [pscustomobject]@{Code=$nativeCode;Text=$text}
+        }
+        $stageDriver={param($inf);& $runNative (Join-Path $env:SystemRoot 'System32\pnputil.exe') @('/add-driver',$inf)}
+        $registerDriverFallback={param($inf,$model);& $runNative (Join-Path $env:SystemRoot 'System32\printui.exe') @('/ia','/m',$model,'/h','x64','/f',$inf)}
+        """;
     public const string Body = """
         $rows=[Collections.Generic.List[object]]::new()
         try {
@@ -45,13 +57,27 @@ public record LocalPrinterPackage(string Title, string RelativeDirectory, string
                 }
               }
               if(-not $storeInf){throw ('O INF exato não foi confirmado no Driver Store. Nenhum driver de impressão foi registrado. INF='+$name+'; pastas candidatas='+$folders.Count)}
-              Add-PrinterDriver -Name $data.Model -PrinterEnvironment 'Windows x64' -InfPath $storeInf -ErrorAction Stop
-              $after=@(Get-PrinterDriver|Where-Object {$_.Name -eq $data.Model -and $_.PrinterEnvironment -eq 'Windows x64'})
-              if($after.Count -ne 1){throw 'Driver não foi confirmado no spooler após instalar.'}
-              $rows.Add([pscustomobject]@{Acao='Registrar driver Ricoh';Pacote=$data.Model;Escopo='Computador';Estado='Aplicado';Detalhes=('Driver x64 confirmado no spooler. INF='+$storeInf+'. Nenhuma fila/porta/padrão foi alterada.')})
+              $registrationPending=$false
+              try{
+                Add-PrinterDriver -Name $data.Model -PrinterEnvironment 'Windows x64' -InfPath $storeInf -ErrorAction Stop
+                if(-not @(Get-PrinterDriver|Where-Object {$_.Name -eq $data.Model -and $_.PrinterEnvironment -eq 'Windows x64'}).Count){throw 'Add-PrinterDriver concluiu sem confirmar o modelo.'}
+              }catch{
+                $diagnostic=($_|Format-List * -Force|Out-String)+($_.Exception|Format-List * -Force|Out-String)
+                $rows.Add([pscustomobject]@{Acao='Registrar driver Ricoh via CIM';Pacote=$data.Model;Escopo='Computador';Estado='Alternativa';Detalhes=('Primeiro método não confirmou o driver. Tentando PrintUI nativo do Windows. '+$diagnostic)})
+                if(-not @(Get-PrinterDriver|Where-Object {$_.Name -eq $data.Model -and $_.PrinterEnvironment -eq 'Windows x64'}).Count){
+                  $fallback=& $registerDriverFallback $data.Inf $data.Model
+                  if($fallback.Code -eq 3010){$registrationPending=$true;$rows.Add([pscustomobject]@{Acao='Registrar driver Ricoh via PrintUI';Pacote=$data.Model;Escopo='Computador';Estado='Pendente';Detalhes=('Reinício solicitado, somente manual. '+$fallback.Text)})}
+                  elseif($fallback.Code -ne 0){throw ('PrintUI retornou '+$fallback.Code+'. '+$fallback.Text+'; CIM: '+$diagnostic)}
+                }
+              }
+              if(-not $registrationPending){
+                $after=@(Get-PrinterDriver|Where-Object {$_.Name -eq $data.Model -and $_.PrinterEnvironment -eq 'Windows x64'})
+                if($after.Count -ne 1){throw ('Driver não foi confirmado no spooler após CIM/PrintUI. INF='+$storeInf+'. Consulte também Windows/INF/setupapi.dev.log e os eventos PrintService.')}
+                $rows.Add([pscustomobject]@{Acao='Registrar driver Ricoh';Pacote=$data.Model;Escopo='Computador';Estado='Aplicado';Detalhes=('Driver x64 confirmado no spooler. INF='+$storeInf+'. Nenhuma fila/porta/padrão foi alterada.')})
+              }
             }
           }
-        }catch{$rows.Add([pscustomobject]@{Acao='Instalar driver Ricoh';Pacote=$data.Model;Escopo='Computador';Estado='Erro';Detalhes=$_.Exception.Message})}
+        }catch{$rows.Add([pscustomobject]@{Acao='Instalar driver Ricoh';Pacote=$data.Model;Escopo='Computador';Estado='Erro';Detalhes=(($_|Format-List * -Force|Out-String)+($_.Exception|Format-List * -Force|Out-String))})}
         ConvertTo-Json -InputObject @($rows.ToArray()) -Depth 5 -Compress
         """;
 }

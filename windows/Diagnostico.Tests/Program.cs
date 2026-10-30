@@ -219,6 +219,18 @@ Check(!LocalPrinterPackage.Body.Contains("Restart-Service") && !LocalPrinterPack
 await Reject<ArgumentException>(() => Task.Run(() => (localDriver with { RelativeDirectory = "DRIVERS/../escape" }).Validate()));
 await Reject<ArgumentException>(() => Task.Run(() => (localDriver with { InfSha256 = "bad" }).Validate()));
 await Reject<ArgumentException>(() => Task.Run(() => localDriver.InstallScript("fixture.inf", "Foreign model")));
+int driverInstallCalls = 0; bool driverExists = true;
+Check(await PrinterDriverRequirement.Ensure(()=>Task.FromResult(driverExists),()=>{driverInstallCalls++;return Task.FromResult(true);}) && driverInstallCalls==0, "Driver existente foi reinstalado");
+driverExists=false;
+Check(!await PrinterDriverRequirement.Ensure(()=>Task.FromResult(driverExists),()=>Task.FromResult(false)), "Cancelar instalação não bloqueou filas");
+await Reject<IOException>(()=>PrinterDriverRequirement.Ensure(()=>Task.FromResult(false),()=>Task.FromResult(true)));
+Check(await PrinterDriverRequirement.Ensure(()=>Task.FromResult(driverExists),()=>{driverExists=true;return Task.FromResult(true);}), "Instalação confirmada não libera filas");
+var removalScript=PrinterRemoval.Build([new("Fixture [literal]","Fixture driver","port1",false)],"fixture.json",false);
+Check(removalScript.Contains("Remove-Printer -InputObject") && !removalScript.Contains("Remove-PrinterPort") && !removalScript.Contains("Remove-PrinterDriver"), "Exclusão remove porta/driver ou permite wildcard");
+Check(removalScript.IndexOf("Set-Content")<removalScript.IndexOf("Remove-Printer -InputObject") && removalScript.Contains("Get-PrintJob"), "Exclusão não faz backup/check de jobs antes de remover");
+await Reject<ArgumentException>(()=>Task.FromResult(PrinterRemoval.Build([],"fixture.json",false)));
+await Reject<ArgumentException>(()=>Task.FromResult(PrinterRemoval.Build([new("Duplicate","d","p",false),new("Duplicate","d","p",false)],"fixture.json",false)));
+Check(LocalPrinterPackage.NativeHelpers.Contains("printui.exe") && LocalPrinterPackage.NativeHelpers.Contains("'/ia'") && !LocalPrinterPackage.NativeHelpers.Contains("'/if'"), "Alternativa Ricoh cria fila antes de registrar driver");
 Console.WriteLine($"Total final: {passed} verificações aprovadas.");
 
 sealed class FixtureHandler : HttpMessageHandler

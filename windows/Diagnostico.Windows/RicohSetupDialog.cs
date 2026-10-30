@@ -15,7 +15,8 @@ internal sealed class RicohSetupDialog:Form
         var modelBar=new FlowLayoutPanel{Dock=DockStyle.Top,Height=48};modelBar.Controls.Add(new Label{Text="Modelo do driver:",AutoSize=true,Padding=new Padding(0,8,8,0)});modelBar.Controls.Add(models);
         var actions=new FlowLayoutPanel{Dock=DockStyle.Top,Height=60};
         Add(actions,"Instalar somente o driver",()=>RunOperation(false));Add(actions,"Instalar driver e filas marcadas",()=>RunOperation(true));Add(actions,"Inventário / drivers",()=>_ = Operate(async()=>{using var data=await CompanyService.Script(PrinterScripts.Inventory,CancellationToken.None);return TestResult.Done("Inventário de impressoras",("Inventário",data.RootElement.Clone()));}));
-        Controls.Add(queues);Controls.Add(actions);Controls.Add(modelBar);Controls.Add(intro);Controls.Add(output);Controls.Add(state);
+        var selection=new FlowLayoutPanel{Dock=DockStyle.Top,Height=44};buttons.AddRange(PrinterSelectionButtons.Add(selection,queues));
+        Controls.Add(queues);Controls.Add(selection);Controls.Add(actions);Controls.Add(modelBar);Controls.Add(intro);Controls.Add(output);Controls.Add(state);
         FormClosing+=(_,e)=>{if(busy){e.Cancel=true;state.Text="Aguarde a instalação terminar antes de fechar.";}};
     }
     void Add(FlowLayoutPanel row,string text,Action action){var b=new Button{Text=text,AutoSize=true,Height=40,Padding=new Padding(5)};b.Click+=(_,_)=>action();row.Controls.Add(b);buttons.Add(b);}
@@ -32,5 +33,5 @@ internal sealed class RicohSetupDialog:Form
         catch(Exception e){output.Text=e.Message;state.Text="Não concluído";record(new("Ricoh · driver e filas","Não concluído",new(){["Erro"]=e.Message},DateTimeOffset.Now));MessageBox.Show(this,e.Message,Text,MessageBoxButtons.OK,MessageBoxIcon.Warning);}
         finally{busy=false;buttons.ForEach(b=>b.Enabled=true);models.Enabled=true;}
     }
-    internal void VerifyUi(){if(models.Items.Count!=2||queues.Items.Count!=1||buttons.Count!=3||busy)throw new Exception("Fluxo Ricoh driver/filas não foi montado corretamente.");}
+    internal void VerifyUi(){if(models.Items.Count!=2||queues.Items.Count!=1||buttons.Count!=5||busy)throw new Exception("Fluxo Ricoh driver/filas não foi montado corretamente.");}
 }
