@@ -17,9 +17,9 @@ internal static class RicohSmoke
         ProcessOutcome Execute(string script)=>Task.Run(()=>MainForm.UpdateProcess(script,CancellationToken.None)).GetAwaiter().GetResult();
         foreach(var state in new[]{"normal","existing","failed","reboot","unconfirmed"}){
             string setup=state switch {"existing"=>"$script:installed=$true", "failed"=>"$script:code=5", "reboot"=>"$script:code=3010", "unconfirmed"=>"$script:missing=$true",_=>""};
-            var outcome=Execute(mock+"\n"+setup+"\n$answer=& {\n"+LocalPrinterPackage.Body+"\n}\n"+"[pscustomobject]@{Result=@($answer|ConvertFrom-Json);Stages=$script:stages;Adds=$script:adds}|ConvertTo-Json -Depth 8 -Compress");
+            var outcome=Execute(mock+"\n"+setup+"\n$answer=& {\n"+LocalPrinterPackage.Body+"\n}\n"+"[pscustomobject]@{ResultJson=[string]$answer;Stages=$script:stages;Adds=$script:adds}|ConvertTo-Json -Depth 8 -Compress");
             if(outcome.ExitCode!=0)throw new Exception("Ricoh fixture "+state+": "+outcome.Error);
-            using var data=System.Text.Json.JsonDocument.Parse(outcome.Output);var root=data.RootElement;var rows=OperationResults.Packages(root.GetProperty("Result").GetRawText());int stages=root.GetProperty("Stages").GetInt32(),adds=root.GetProperty("Adds").GetInt32();
+            using var data=System.Text.Json.JsonDocument.Parse(outcome.Output);var root=data.RootElement;var rows=OperationResults.Packages(root.GetProperty("ResultJson").GetString()!);int stages=root.GetProperty("Stages").GetInt32(),adds=root.GetProperty("Adds").GetInt32();
             if(state=="normal"&&(rows.Any(r=>r.Failed)||stages!=1||adds!=1||!RicohSetupService.Ready(new("fixture","",new(){["Etapas"]=rows},DateTimeOffset.Now))))throw new Exception("Driver Ricoh não confirmado na fixture: "+outcome.Output);
             if(state=="existing"&&(stages!=0||adds!=0||rows.Single().Estado!="Preservado"))throw new Exception("Driver existente foi reinstalado.");
             if(state is "failed" or "unconfirmed" && !rows.Any(r=>r.Failed))throw new Exception("Erro Ricoh foi ocultado.");

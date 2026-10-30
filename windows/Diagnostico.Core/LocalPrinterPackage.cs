@@ -35,11 +35,16 @@ public record LocalPrinterPackage(string Title, string RelativeDirectory, string
               $rows.Add([pscustomobject]@{Acao='Preparar pacote Ricoh';Pacote=$data.Model;Escopo='Driver Store';Estado='Aplicado';Detalhes=('PNPUtil retornou 0. '+$text)})
               $repository=Join-Path $env:SystemRoot 'System32\DriverStore\FileRepository'
               $name=[IO.Path]::GetFileName($data.Inf)
-              $storeInf=@(Get-ChildItem -LiteralPath $repository -Directory -Filter ($name+'_amd64_*')|Sort-Object Name|ForEach-Object {
-                $candidate=Join-Path $_.FullName $name
-                if((Test-Path -LiteralPath $candidate) -and (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -eq $data.Hash){$candidate}
-              })|Select-Object -First 1
-              if(-not $storeInf){throw 'O INF exato não foi confirmado no Driver Store. Nenhum driver de impressão foi registrado.'}
+              $folders=@(Get-ChildItem -LiteralPath $repository -Directory -Filter ($name+'_amd64_*'))
+              $storeInf=$null
+              foreach($folder in $folders){
+                $candidate=Join-Path $folder.FullName $name
+                if(Test-Path -LiteralPath $candidate){
+                  $actualHash=[string](Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+                  if($actualHash -eq [string]$data.Hash){$storeInf=$candidate;break}
+                }
+              }
+              if(-not $storeInf){throw ('O INF exato não foi confirmado no Driver Store. Nenhum driver de impressão foi registrado. INF='+$name+'; pastas candidatas='+$folders.Count)}
               Add-PrinterDriver -Name $data.Model -PrinterEnvironment 'Windows x64' -InfPath $storeInf -ErrorAction Stop
               $after=@(Get-PrinterDriver|Where-Object {$_.Name -eq $data.Model -and $_.PrinterEnvironment -eq 'Windows x64'})
               if($after.Count -ne 1){throw 'Driver não foi confirmado no spooler após instalar.'}
