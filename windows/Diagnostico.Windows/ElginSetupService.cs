@@ -40,6 +40,25 @@ internal static class ElginSetupService
         var jobs = await MainForm.UpdateProcess("$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + data + "'));if(@(Get-PrintJob -PrinterName $p -ErrorAction Stop).Count){throw 'Fila com trabalhos pendentes. Aguarde antes de configurar/restaurar.'}", CancellationToken.None);
         if (jobs.ExitCode != 0) throw new IOException(jobs.Error);
     }
+    internal static async Task<TestResult> ApplyAutomatic(CompanyPrinter[] printers) {
+        if (printers.Length == 0 || printers.Any(p => !p.Receipt)) throw new ArgumentException("Marque as filas de comprovantes desejadas.");
+        var rows = new List<OperationRow>();
+        foreach (var printer in printers) {
+            try {
+                await CheckQueue(printer.Name, printer);
+                string backup = await Task.Run(() => {
+                    using var settings = new ElginPreferences(printer.Name);
+                    var preset = settings.AutomaticProfile();
+                    string file = settings.Apply(preset, Automation.BackupDirectory);
+                    ElginReceiptPreset.Verify(settings.Read(8) ?? [], settings.Driver, settings.Fingerprint);
+                    ElginReceiptPreset.Verify(settings.Read(9) ?? [], settings.Driver, settings.Fingerprint);
+                    return file;
+                });
+                rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Padrão global e conta executando o RBT", "Aplicado", ElginReceiptPreset.Description + " Valores relidos e conferidos no driver; sem captura de modelo. Backup=" + backup + ". Impressão física e presença do logo na memória da impressora precisam de conferência."));
+            } catch (Exception e) { rows.Add(new("Configurar comprovantes automaticamente", printer.Name, "Fila selecionada", "Erro", e.Message)); }
+        }
+        return new("Comprovantes · ajuste automático", rows.Any(r => r.Failed) ? "Concluído com falhas" : "Ajustes aplicados; impressão física pendente", new() { ["Etapas"] = rows.ToArray(), ["Limite"] = "Não é preciso configurar/capturar modelo manual. A imagem do logotipo deve já estar gravada na impressora; selecionar logo não envia a imagem. Nenhum firmware enviado." }, DateTimeOffset.Now);
+    }
     internal static ReceiptProfile LoadProfile(string? file = null) {
         var profile = JsonSerializer.Deserialize<ReceiptProfile>(File.ReadAllText(file ?? ProfileFile)) ?? throw new IOException("Perfil completo inválido."); profile.Validate(); return profile;
     }

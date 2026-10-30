@@ -4,11 +4,12 @@ namespace Diagnostico;
 
 // Stores the driver's complete Unicode DEVMODE, including its proprietary settings.
 // Photos/PrintTicket alone cannot reconstruct those private fields.
-public record ReceiptProfile(int Format, string Driver, string DriverFingerprint, byte[] DevMode, bool ConfirmedByTechnician, DateTimeOffset CapturedAt)
+public record ReceiptProfile(int Format, string Driver, string DriverFingerprint, byte[] DevMode, bool ConfirmedByTechnician, DateTimeOffset CapturedAt, string Method = "Capture")
 {
     public void Validate() {
-        if (Format != 1 || !ConfirmedByTechnician || Driver != "ELGIN i9(USB)" || DriverFingerprint.Length != 64 || !DriverFingerprint.All(Uri.IsHexDigit)) throw new ArgumentException("Perfil Elgin inválido ou não conferido pelo técnico.");
+        if (Format != 1 || (!ConfirmedByTechnician && Method != "AutomaticPreset") || Driver != "ELGIN i9(USB)" || DriverFingerprint.Length != 64 || !DriverFingerprint.All(Uri.IsHexDigit)) throw new ArgumentException("Perfil Elgin inválido ou não conferido pelo técnico.");
         ValidateMode(DevMode);
+        if (Method == "AutomaticPreset") ElginReceiptPreset.Verify(DevMode, Driver, DriverFingerprint);
         if (DevMode.Length == BinaryPrimitives.ReadUInt16LittleEndian(DevMode.AsSpan(68))) throw new ArgumentException("Perfil não contém preferências privadas do driver Elgin.");
     }
     public void Compatible(string driver, string fingerprint) {

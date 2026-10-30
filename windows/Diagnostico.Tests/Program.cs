@@ -190,6 +190,27 @@ Check(restored && ReferenceEquals(savedGlobal, devMode), "Falha parcial não res
 restored = false;
 await Reject<IOException>(() => Task.Run(() => ReceiptPreferenceTransaction.Apply(queueMode, level => { var changed = (byte[])queueMode.Clone(); changed[227] ^= 1; return changed; }, (level, mode) => { }, () => restored = true)));
 Check(restored, "Driver que não mantém preferências privadas foi aprovado");
+// Exact-package automatic preset, no user capture or saved .dat/profile required.
+byte[] originalElgin = new byte[ElginReceiptPreset.ModeLength];
+System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(originalElgin.AsSpan(68), 220);
+System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(originalElgin.AsSpan(70), 4468);
+originalElgin[0x350] = 77; originalElgin[0x3a0] = 0x8F; originalElgin[0x3a4] = 44;
+var automatic = ElginReceiptPreset.Build(originalElgin, ElginReceiptPreset.DriverName, ElginReceiptPreset.Fingerprint); automatic.Validate();
+Check(!automatic.ConfirmedByTechnician && automatic.Method == "AutomaticPreset", "Preset automático ainda depende de conferência/captura manual");
+Check(automatic.DevMode[0x350] == 77 && automatic.DevMode[0x3a4] == 44 && originalElgin[0x3a0] == 0x8F, "Preset alterou origem ou preferências fora do escopo");
+Check(automatic.DevMode[0x3a0] == 0x84, "Logo precisa estar habilitado somente no início da página, preservando bits externos");
+Check(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(automatic.DevMode.AsSpan(0x33c)) == 8 && System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(automatic.DevMode.AsSpan(0x340)) == 1, "Corte fim de página/parcial não corresponde ao codec validado pelo driver");
+Check(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(automatic.DevMode.AsSpan(0x7c0)) == 2 && automatic.DevMode[0x7c4] == 48 && automatic.DevMode[0x7c5] == 48 && automatic.DevMode[0x7c8] == 2, "Logo salvo, chaves 0/0 e centralização incorretos");
+Check(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(automatic.DevMode.AsSpan(80)) == 1000 && System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(automatic.DevMode.AsSpan(82)) == 720, "Dimensões não são 72x100 mm");
+await Reject<ArgumentException>(() => Task.Run(() => ElginReceiptPreset.Build(originalElgin, "Other driver", ElginReceiptPreset.Fingerprint)));
+await Reject<ArgumentException>(() => Task.Run(() => ElginReceiptPreset.Build(originalElgin, ElginReceiptPreset.DriverName, new string('0',64))));
+await Reject<ArgumentException>(() => Task.Run(() => ElginReceiptPreset.Build(devMode, ElginReceiptPreset.DriverName, ElginReceiptPreset.Fingerprint)));
+foreach (int offset in new[] { 0x33c, 0x340, 0x344, 0x3a0, 0x7c0, 0x7c4, 0x7c5, 0x7c8, 80, 82 }) {
+    var changedPreset = (byte[])automatic.DevMode.Clone(); changedPreset[offset] ^= 1;
+    await Reject<IOException>(() => Task.Run(() => ElginReceiptPreset.Verify(changedPreset, automatic.Driver, automatic.DriverFingerprint)));
+}
+string? codecOutput = Environment.GetEnvironmentVariable("RBT_ELGIN_CODEC_OUTPUT");
+if (!string.IsNullOrWhiteSpace(codecOutput)) File.WriteAllBytes(codecOutput, automatic.DevMode);
 Console.WriteLine($"Total final: {passed} verificações aprovadas.");
 
 sealed class FixtureHandler : HttpMessageHandler

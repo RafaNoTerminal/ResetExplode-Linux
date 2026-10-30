@@ -79,13 +79,15 @@ internal sealed class ElginPreferences : IDisposable
         File.WriteAllText(file, Reports.Json(new ReceiptQueueBackup(1, Environment.MachineName, queue, Driver, Fingerprint, Read(8) ?? throw new IOException("Preferência global ausente."), Read(9), DateTimeOffset.Now)));
         return file;
     }
+    internal ReceiptProfile AutomaticProfile() => ElginReceiptPreset.Build(Read(8) ?? throw new IOException("O driver não expôs preferências globais."), Driver, Fingerprint);
     internal string Apply(ReceiptProfile profile, string backupDirectory) {
         profile.Compatible(Driver, Fingerprint);
         string backup = Backup(backupDirectory);
         var requested = ReceiptProfile.ForQueue(profile.DevMode, queue);
         EnsureReceiptForm(requested);
         var normalized = Normalize(requested)!;
-        if (!ReceiptProfile.SameSettings(requested, normalized)) throw new IOException("O driver normalizou o modelo para preferências diferentes. Nenhuma preferência foi aplicada. Configure uma fila modelo neste PC e capture novamente. Backup=" + backup);
+        if (profile.Method == "AutomaticPreset") ElginReceiptPreset.Verify(normalized, Driver, Fingerprint);
+        if (profile.Method == "AutomaticPreset" ? !requested.AsSpan(220).SequenceEqual(normalized.AsSpan(220)) : !ReceiptProfile.SameSettings(requested, normalized)) throw new IOException((profile.Method == "AutomaticPreset" ? "O driver não preservou os ajustes automáticos. Nenhuma preferência foi aplicada; confira se o pacote Elgin é o fornecido. Backup=" : "O driver normalizou o modelo para preferências diferentes. Nenhuma preferência foi aplicada. Configure uma fila modelo neste PC e capture novamente. Backup=") + backup);
         try { ReceiptPreferenceTransaction.Apply(normalized, Read, Set, () => Restore(backup)); }
         catch (Exception e) { throw new IOException(e.Message + " Backup=" + backup); }
         return backup;

@@ -1,4 +1,7 @@
-# RBT Diagnóstico · Windows 0.5.1
+# RBT Diagnóstico · Windows 0.5.2
+
+**0.5.2: comprovantes automáticos, sem primeira configuração manual.** Em Impressoras/empresa → Comprovantes: driver e perfil, instale o driver Elgin fornecido, marque as unidades e clique **Adicionar e configurar automaticamente**. Para filas já instaladas, use **Ajustes automáticos → Aplicar automaticamente às filas marcadas**. Papel72×100mm, corte parcial no fim da página/0mm e logo salvo no início da página/Meio/chave0/0 são escritos e relidos pelo app; não exige capturar modelo. A imagem física do logo deve estar gravada na impressora (seleção automática do logo não grava a imagem). O fluxo de modelo manual descrito no histórico0.5.1 passou a ser uma alternativa opcional.
+
 
 Aplicativo portátil para testar PCs Windows 10 22H2 / Windows 11 de 64 bits (x64). Dê dois cliques em **RBT-Diagnostico.exe**. O runtime .NET está incluído: o PC não precisa instalar .NET, Python, GTK ou outro programa de speedtest. Ao abrir, o aplicativo solicita acesso de administrador pelo UAC do Windows, conforme o manifesto incorporado. Se a confirmação for cancelada, o aplicativo não abre. Políticas corporativas podem restringir executáveis não assinados; o aplicativo não altera essas políticas.
 
@@ -135,3 +138,12 @@ Na aba Impressoras, **Comprovantes: driver e perfil** abre um fluxo em três aba
 O utilitário Elgin e `logo novo rbt.png` são materiais privados locais, mantidos no pendrive e na cópia local, fora do repositório e do fonteZIP. **A imagem deve estar gravada na memória de cada impressora física**: copiar o perfil do driver copia a seleção do logo, não transfere a imagem. O botão do utilitário abre seu instalador original para configuração assistida; o RBT não envia firmware/comandosRAW nem grava a memória da impressora automaticamente. Após configurar, imprima um comprovante real para conferir papel, corte e logotipo.
 
 Implementação Win32 documentada pela Microsoft: [DocumentProperties](https://learn.microsoft.com/en-us/windows/win32/printdocs/documentproperties), [SetPrinter](https://learn.microsoft.com/en-us/windows/win32/printdocs/setprinter), [padrão global](https://learn.microsoft.com/en-us/windows/win32/printdocs/printer-info-8) e [padrão por usuário](https://learn.microsoft.com/en-us/windows/win32/printdocs/printer-info-9). CI testa UI sem coleta/instalador e transação com dados fictícios, incluindo falha parcial e releitura divergente. Não instala o driver Elgin nem imprime em impressora real no CI.
+
+
+### Automação inicial Elgin 0.5.2
+
+O preset está limitado ao pacote1.8.0x64 fornecido por Rafael: nome `ELGIN i9(USB)`, SHA256 dos arquivos render/UI/dados e formatoDEVMODE conferidos antes de qualquer mudança. Não tenta aplicar os mesmos offsets em drivers diferentes. O código preserva a configuração atual de cada fila, altera apenas papel/orientação/mono/frente única e os campos mapeados de corte e logo, normaliza pelo driver e verifica os valores antes/depois de gravar. Backup completo e rollback da0.5.1 mantidos. `Adicionar e configurar automaticamente` encadeia criação só ausentes e ajuste das filas marcadas; erros permanecem discriminados por fila. Não precisa `.dat`, perfil exportado ou configurar primeira impressora manualmente.
+
+O mapeamento foi validado com a DLL original, recursos reais das páginasCutPaper/Logo e a saída do codec C# de produção: em ambienteWine/Xvfb isolado, páginas criadas somente em memória, sem registrar impressora/driver, instalar certificado ou acessar rede de impressoras. O driver interpretouFimPágina/Parcial/0mm eInícioPágina/Logosalvocomimpressora/Meio/chaves0/0 e seus callbacks salvaram os mesmos valores. Isso valida a interpretação do formato pelo driver; não é teste físico de impressão nem prova de instalação/Win32spooler noPC alvo. O teste reproduzível e os hashes constam em `windows/Tests/ElginDriverCodecProbe.c` e `windows/Tests/ELGIN-CODEC.md`; os binários proprietários permanecem locais, fora do repositório/fonteZIP.
+
+O app seleciona o logo já salvo em memória da impressora. Gravar a imagem quando ausente continua sendo uma operação de configuração do equipamento, pelo utilitário Elgin, com alvo e imagem escolhidos explicitamente. A automação aqui implementada cobre as preferências de impressão das fotos, sem enviar firmware ou comandos de gravação a equipamentos da rede.

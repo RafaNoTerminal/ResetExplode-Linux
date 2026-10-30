@@ -23,6 +23,10 @@ public sealed partial class MainForm
         var actions = Actions();
         Button(actions, "Instalar filas marcadas", () => {
             if (task is not null) return; var selected = list.CheckedItems.Cast<CompanyPrinter>().ToArray();
+            if (selected.Any(p => p.Receipt)) {
+                if (selected.Any(p => !p.Receipt)) { MessageBox.Show(this, "Selecione comprovantes separadamente das filas de recepção.", Brand.Name); return; }
+                using var dialog = new ElginSetupDialog(company.Printers, selected, result => results.Add(result)); dialog.ShowDialog(this); return;
+            }
             if (selected.Length == 0 || drivers.SelectedItem is not string driver) { MessageBox.Show(this, "Marque as filas e escolha um driver instalado. Use Inventário / drivers.", Brand.Name); return; }
             if (MessageBox.Show(this, "Criar somente filas ainda ausentes?\n\n" + string.Join("\n", selected.Select(p => p.Name + " → " + p.Ip)) + "\nDriver: " + driver + "\n\nNenhuma fila/porta/trabalho existente será removido. Impressora padrão preservada.", Brand.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
             _ = Run("Instalar impressoras", async ct => {
@@ -74,6 +78,6 @@ public sealed partial class MainForm
         var advanced = Actions();
         Button(advanced, "Mostrar / ocultar rede e domínio", () => { bool show = !network.Visible; foreach (var row in advancedRows) { row.Visible = show; row.Height = show ? 44 : 0; } });
         foreach (var row in content.Controls.OfType<FlowLayoutPanel>().Where(r => !advancedRows.Contains(r))) row.Height = 44;
-        Heading("Impressoras da empresa", "Filas do perfil local, inventário de drivers/portas e instalação com conferência por item. Recepção/Ricoh e comprovantes Elgin i9 (72×100 mm, corte parcial e logo via modelo completo do driver). Acesso ao IP não garante impressão; conexão ou driver podem depender da rede/conta da empresa.");
+        Heading("Impressoras da empresa", "Filas do perfil local, inventário de drivers/portas e instalação com conferência por item. Recepção/Ricoh e comprovantes Elgin i9 (72×100 mm, corte parcial e logo com ajustes automáticos). Acesso ao IP não garante impressão; conexão ou driver podem depender da rede/conta da empresa.");
     }
 }
